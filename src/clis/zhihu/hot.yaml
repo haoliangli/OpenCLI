@@ -12,17 +12,31 @@ args:
 pipeline:
   - navigate: https://www.zhihu.com
 
-  - fetch:
-      url: https://www.zhihu.com/api/v4/search/top_search
-      params:
-        limit: ${{ args.limit }}
-
-  - select: top_search.words
+  - evaluate: |
+      (async () => {
+        const res = await fetch('https://www.zhihu.com/api/v3/feed/topstory/hot-lists/total?limit=50', {
+          credentials: 'include'
+        });
+        const d = await res.json();
+        return (d?.data || []).map((item) => {
+          const t = item.target || {};
+          return {
+            title: t.title,
+            url: 'https://www.zhihu.com/question/' + t.id,
+            answer_count: t.answer_count,
+            follower_count: t.follower_count,
+            heat: item.detail_text || '',
+          };
+        });
+      })()
 
   - map:
       rank: ${{ index + 1 }}
-      title: ${{ item.query }}
+      title: ${{ item.title }}
+      heat: ${{ item.heat }}
+      answers: ${{ item.answer_count }}
+      url: ${{ item.url }}
 
   - limit: ${{ args.limit }}
 
-columns: [rank, title]
+columns: [rank, title, heat, answers]

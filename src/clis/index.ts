@@ -16,4 +16,4 @@ import './bilibili/user-videos.js';
 import './github/search.js';
 
 // zhihu
-import './zhihu/search.js';
+import './zhihu/question.js';
