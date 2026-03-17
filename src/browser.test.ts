@@ -1,5 +1,11 @@
-import { describe, it, expect } from 'vitest';
+import { afterEach, describe, it, expect, vi } from 'vitest';
 import { PlaywrightMCP, __test__ } from './browser/index.js';
+
+afterEach(() => {
+  __test__.resetMcpServerPathCache();
+  __test__.setMcpDiscoveryTestHooks();
+  delete process.env.OPENCLI_MCP_SERVER_PATH;
+});
 
 describe('browser helpers', () => {
   it('creates JSON-RPC requests with unique ids', () => {
@@ -108,6 +114,98 @@ describe('browser helpers', () => {
 
   it('times out slow promises', async () => {
     await expect(__test__.withTimeoutMs(new Promise(() => {}), 10, 'timeout')).rejects.toThrow('timeout');
+  });
+
+  it('prefers OPENCLI_MCP_SERVER_PATH over discovered locations', () => {
+    process.env.OPENCLI_MCP_SERVER_PATH = '/env/mcp/cli.js';
+    const existsSync = vi.fn((candidate: any) => candidate === '/env/mcp/cli.js');
+    const execSync = vi.fn();
+    __test__.setMcpDiscoveryTestHooks({ existsSync, execSync: execSync as any });
+
+    expect(__test__.findMcpServerPath()).toBe('/env/mcp/cli.js');
+    expect(execSync).not.toHaveBeenCalled();
+    expect(existsSync).toHaveBeenCalledWith('/env/mcp/cli.js');
+  });
+
+  it('discovers global @playwright/mcp from the current Node runtime prefix', () => {
+    const originalExecPath = process.execPath;
+    const runtimeExecPath = '/opt/homebrew/Cellar/node/25.2.1/bin/node';
+    const runtimeGlobalMcp = '/opt/homebrew/Cellar/node/25.2.1/lib/node_modules/@playwright/mcp/cli.js';
+    Object.defineProperty(process, 'execPath', {
+      value: runtimeExecPath,
+      configurable: true,
+    });
+
+    const existsSync = vi.fn((candidate: any) => candidate === runtimeGlobalMcp);
+    const execSync = vi.fn();
+    __test__.setMcpDiscoveryTestHooks({ existsSync, execSync: execSync as any });
+
+    try {
+      expect(__test__.findMcpServerPath()).toBe(runtimeGlobalMcp);
+      expect(execSync).not.toHaveBeenCalled();
+      expect(existsSync).toHaveBeenCalledWith(runtimeGlobalMcp);
+    } finally {
+      Object.defineProperty(process, 'execPath', {
+        value: originalExecPath,
+        configurable: true,
+      });
+    }
+  });
+
+  it('falls back to npm root -g when runtime prefix lookup misses', () => {
+    const originalExecPath = process.execPath;
+    const runtimeExecPath = '/opt/homebrew/Cellar/node/25.2.1/bin/node';
+    const runtimeGlobalMcp = '/opt/homebrew/Cellar/node/25.2.1/lib/node_modules/@playwright/mcp/cli.js';
+    const npmRootGlobal = '/Users/jakevin/.nvm/versions/node/v22.14.0/lib/node_modules';
+    const npmGlobalMcp = '/Users/jakevin/.nvm/versions/node/v22.14.0/lib/node_modules/@playwright/mcp/cli.js';
+    Object.defineProperty(process, 'execPath', {
+      value: runtimeExecPath,
+      configurable: true,
+    });
+
+    const existsSync = vi.fn((candidate: any) => candidate === npmGlobalMcp);
+    const execSync = vi.fn((command: string) => {
+      if (String(command).includes('npm root -g')) return `${npmRootGlobal}\n` as any;
+      throw new Error(`unexpected command: ${String(command)}`);
+    });
+    __test__.setMcpDiscoveryTestHooks({ existsSync, execSync: execSync as any });
+
+    try {
+      expect(__test__.findMcpServerPath()).toBe(npmGlobalMcp);
+      expect(execSync).toHaveBeenCalledOnce();
+      expect(existsSync).toHaveBeenCalledWith(runtimeGlobalMcp);
+      expect(existsSync).toHaveBeenCalledWith(npmGlobalMcp);
+    } finally {
+      Object.defineProperty(process, 'execPath', {
+        value: originalExecPath,
+        configurable: true,
+      });
+    }
+  });
+
+  it('returns null when new global discovery paths are unavailable', () => {
+    const originalExecPath = process.execPath;
+    const runtimeExecPath = '/opt/homebrew/Cellar/node/25.2.1/bin/node';
+    Object.defineProperty(process, 'execPath', {
+      value: runtimeExecPath,
+      configurable: true,
+    });
+
+    const existsSync = vi.fn(() => false);
+    const execSync = vi.fn((command: string) => {
+      if (String(command).includes('npm root -g')) return '/missing/global/node_modules\n' as any;
+      throw new Error(`missing command: ${String(command)}`);
+    });
+    __test__.setMcpDiscoveryTestHooks({ existsSync, execSync: execSync as any });
+
+    try {
+      expect(__test__.findMcpServerPath()).toBeNull();
+    } finally {
+      Object.defineProperty(process, 'execPath', {
+        value: originalExecPath,
+        configurable: true,
+      });
+    }
   });
 });
 
