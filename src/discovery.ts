@@ -15,6 +15,7 @@ import { pathToFileURL } from 'node:url';
 import yaml from 'js-yaml';
 import { type CliCommand, type InternalCliCommand, type Arg, Strategy, registerCommand } from './registry.js';
 import { log } from './logger.js';
+import { getErrorMessage } from './errors.js';
 import type { ManifestEntry } from './build-manifest.js';
 
 /** Plugins directory: ~/.opencli/plugins/ */
@@ -45,9 +46,7 @@ interface YamlCliDefinition {
   navigateBefore?: boolean | string;
 }
 
-function getErrorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
-}
+
 
 function parseStrategy(rawStrategy: string | undefined, fallback: Strategy = Strategy.COOKIE): Strategy {
   if (!rawStrategy) return fallback;

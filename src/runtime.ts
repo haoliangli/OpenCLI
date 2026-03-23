@@ -1,5 +1,6 @@
 import { BrowserBridge, CDPBridge } from './browser/index.js';
 import type { IPage } from './types.js';
+import { TimeoutError } from './errors.js';
 
 /**
  * Returns the appropriate browser factory based on environment config.
@@ -21,15 +22,26 @@ export async function runWithTimeout<T>(
   promise: Promise<T>,
   opts: { timeout: number; label?: string },
 ): Promise<T> {
-  return withTimeoutMs(promise, opts.timeout * 1000, `${opts.label ?? 'Operation'} timed out after ${opts.timeout}s`);
+  const label = opts.label ?? 'Operation';
+  return withTimeoutMs(promise, opts.timeout * 1000,
+    () => new TimeoutError(label, opts.timeout));
 }
 
 /**
  * Timeout with milliseconds unit. Used for low-level internal timeouts.
+ * Accepts a factory function to create the rejection error, keeping this
+ * utility decoupled from specific error types.
  */
-export function withTimeoutMs<T>(promise: Promise<T>, timeoutMs: number, message: string): Promise<T> {
+export function withTimeoutMs<T>(
+  promise: Promise<T>,
+  timeoutMs: number,
+  makeError: string | (() => Error) = 'Operation timed out',
+): Promise<T> {
+  const reject_ = typeof makeError === 'string'
+    ? () => new Error(makeError)
+    : makeError;
   return new Promise<T>((resolve, reject) => {
-    const timer = setTimeout(() => reject(new Error(message)), timeoutMs);
+    const timer = setTimeout(() => reject(reject_()), timeoutMs);
     promise.then(
       (value) => { clearTimeout(timer); resolve(value); },
       (error) => { clearTimeout(timer); reject(error); },
