@@ -46,8 +46,6 @@ interface YamlCliDefinition {
   navigateBefore?: boolean | string;
 }
 
-
-
 function parseStrategy(rawStrategy: string | undefined, fallback: Strategy = Strategy.COOKIE): Strategy {
   if (!rawStrategy) return fallback;
   const key = rawStrategy.toUpperCase() as keyof typeof Strategy;

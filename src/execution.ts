@@ -22,7 +22,6 @@ const _loadedModules = new Set<string>();
 type CommandArgs = Record<string, unknown>;
 
 
-
 /**
  * Validates and coerces arguments based on the command's Arg definitions.
  */
