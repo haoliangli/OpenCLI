@@ -2,6 +2,7 @@
  * Douban movie adapter utilities.
  */
 
+import { AuthRequiredError } from '../../errors.js';
 import type { IPage } from '../../types.js';
 
 /**
@@ -46,7 +47,7 @@ export async function getSelfUid(page: IPage): Promise<string> {
     })()
   `);
   if (!uid) {
-    throw new Error('Not logged in to Douban. Please login in Chrome first.');
+    throw new AuthRequiredError('movie.douban.com', 'Not logged in to Douban. Please login in Chrome first.');
   }
   return uid;
 }

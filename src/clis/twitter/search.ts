@@ -32,7 +32,7 @@ async function navigateToSearch(page: Pick<IPage, 'evaluate' | 'wait'>, query: s
     }
   }
 
-  throw new Error(
+  throw new CommandExecutionError(
     `SPA navigation to /search failed. Final path: ${lastPath || '(empty)'}. Twitter may have changed its routing.`,
   );
 }

@@ -69,7 +69,7 @@ cli({
     `);
 
     if (!Array.isArray(data)) {
-      throw new Error('Failed to parse notifications data');
+      throw new CommandExecutionError('Failed to parse notifications data');
     }
 
     const limit = kwargs.limit || 20;

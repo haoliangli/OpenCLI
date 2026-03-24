@@ -1,4 +1,5 @@
 import { cli, Strategy } from '../../registry.js';
+import { CommandExecutionError } from '../../errors.js';
 
 cli({
   site: 'twitter',
@@ -153,7 +154,7 @@ cli({
     `);
 
     if (result?.error) {
-      throw new Error(result.error + (result.hint ? ` (${result.hint})` : ''));
+      throw new CommandExecutionError(result.error + (result.hint ? ` (${result.hint})` : ''));
     }
 
     return result || [];
