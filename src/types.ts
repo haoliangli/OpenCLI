@@ -22,6 +22,10 @@ export interface SnapshotOptions {
   raw?: boolean;
   viewportExpand?: number;
   maxTextLength?: number;
+  /** Enable event listener detection via CDP (marks elements with click listeners) */
+  detectListeners?: boolean;
+  /** Enable AXTree-based interactivity detection via CDP */
+  useAXTree?: boolean;
 }
 
 export interface WaitOptions {
