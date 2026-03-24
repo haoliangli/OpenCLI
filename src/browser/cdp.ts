@@ -31,18 +31,6 @@ export interface CDPTarget {
   webSocketDebuggerUrl?: string;
 }
 
-interface AXTreeNode {
-  nodeId?: number;
-  backendNodeId?: number;
-  role?: string;
-  name?: string;
-  properties?: Array<{ name: string; value: string | undefined }>;
-}
-
-interface AXTree {
-  children?: AXTreeNode[];
-}
-
 interface RuntimeEvaluateResult {
   result?: {
     value?: unknown;
@@ -188,95 +176,6 @@ export class CDPBridge {
       this.on(event, handler);
     });
   }
-
-  /**
-   * Fetch AXTree data and build a map of backendNodeId -> interactive state.
-   * Returns a Set of backendNodeIds that are clickable/focusable according to AXTree.
-   */
-  async fetchInteractiveNodeIds(): Promise<Set<number>> {
-    try {
-      await this.send('Accessibility.enable');
-      const result = await this.send('Accessibility.getFullAXTree') as { tree?: AXTree };
-      const interactiveIds = new Set<number>();
-
-      function walkTree(node?: AXTreeNode) {
-        if (!node) return;
-        const backendId = node.backendNodeId;
-        if (backendId) {
-          // Check if node has interactive role or focusable property
-          const role = node.role?.toLowerCase() || '';
-          const isClickable = role === 'button' || role === 'link' || role === 'menuitem' ||
-                            role === 'tab' || role === 'checkbox' || role === 'radio' ||
-                            role === 'combobox' || role === 'textbox' || role === 'searchbox';
-          const focusable = node.properties?.some(p =>
-            p.name === 'focusable' && (p.value === 'true' || p.value === true)
-          );
-          if (isClickable || focusable) {
-            interactiveIds.add(backendId);
-          }
-        }
-        // Recurse into children (AXTree uses nested children)
-        if (Array.isArray(node.children)) {
-          for (const child of node.children) {
-            walkTree(child);
-          }
-        }
-      }
-
-      const rootNodes = result.tree?.children || [];
-      for (const root of rootNodes) {
-        walkTree(root);
-      }
-
-      return interactiveIds;
-    } catch {
-      // AXTree may not be available in all contexts (e.g., some extension pages)
-      return new Set();
-    }
-  }
-
-  /**
-   * Fetch event listeners for all nodes in the document.
-   * Returns a Map of nodeId -> array of listener types.
-   */
-  async fetchEventListeners(): Promise<Map<number, string[]>> {
-    try {
-      await this.send('DOM.enable');
-      await this.send('DOMDebugger.enable');
-
-      const docResult = await this.send('DOM.getFlattenedDocument') as {
-        nodes?: Array<{ nodeId: number; localName?: string; children?: unknown[] }>;
-      };
-
-      const listenerMap = new Map<number, string[]>();
-
-      if (!docResult.nodes) return listenerMap;
-
-      // Check listeners for each node (limit to first 100 to avoid excessive calls)
-      const nodesToCheck = docResult.nodes.slice(0, 100);
-      for (const node of nodesToCheck) {
-        if (typeof node.nodeId !== 'number') continue;
-
-        try {
-          const listenersResult = await this.send('DOMDebugger.getEventListeners', {
-            nodeId: node.nodeId,
-            objectId: undefined,
-          }) as { listeners: Array<{ type: string }> };
-
-          if (Array.isArray(listenersResult.listeners) && listenersResult.listeners.length > 0) {
-            const types = listenersResult.listeners.map(l => l.type);
-            listenerMap.set(node.nodeId, types);
-          }
-        } catch {
-          // Some nodes may not support getting listeners
-        }
-      }
-
-      return listenerMap;
-    } catch {
-      return new Map();
-    }
-  }
 }
 
 class CDPPage implements IPage {
@@ -332,17 +231,7 @@ class CDPPage implements IPage {
       includeScrollInfo: true,
       bboxDedup: true,
     });
-    const result = await this.evaluate(snapshotJs) as Record<string, unknown>;
-
-    // Enhance with event listener data if requested
-    if (opts.detectListeners === true) {
-      const listenerData = await this.fetchEventListeners();
-      if (listenerData.size > 0) {
-        await annotateWithListeners(this.bridge, result, listenerData);
-      }
-    }
-
-    return result;
+    return this.evaluate(snapshotJs);
   }
 
   // ── Shared DOM operations (P1 fix #5 — using dom-helpers.ts) ──
@@ -449,57 +338,6 @@ class CDPPage implements IPage {
 }
 
 import { isRecord, saveBase64ToFile } from '../utils.js';
-
-/**
- * Post-process snapshot with event listener data.
- *
- * This uses DOM.getFlattenedDocument to get nodeIds, then matches them
- * against the event listener data from DOMDebugger.getEventListeners.
- */
-async function annotateWithListeners(
-  bridge: CDPBridge,
-  node: Record<string, unknown>,
-  listenerMap: Map<number, string[]>,
-): Promise<void> {
-  const children = isRecord(node.children) ? node.children as Record<string, unknown>[] :
-                   Array.isArray(node.children) ? node.children as Record<string, unknown>[] : [];
-
-  // Process current node - check for click-like listeners
-  const ref = node.ref;
-  if (typeof ref === 'number') {
-    try {
-      // Try to find a matching node in the DOM by checking attributes
-      // For elements with unique IDs, we can match directly
-      const id = node.id;
-      if (typeof id === 'string' && id) {
-        // Query by ID to get nodeId
-        const queryResult = await bridge.send('DOM.querySelector', {
-          nodeId: 1, // document node
-          selector: `#${CSS.escape(id)}`,
-        }) as { nodeId: number };
-
-        if (queryResult.nodeId && listenerMap.has(queryResult.nodeId)) {
-          const listeners = listenerMap.get(queryResult.nodeId)!;
-          const hasClickListener = listeners.some(t =>
-            t === 'click' || t === 'mousedown' || t === 'mouseup' || t === 'touchstart'
-          );
-          if (hasClickListener) {
-            (node as Record<string, unknown>).hasClickListener = true;
-          }
-        }
-      }
-    } catch {
-      // Node not found or other error - skip
-    }
-  }
-
-  // Recurse into children
-  for (const child of children) {
-    if (isRecord(child)) {
-      await annotateWithListeners(bridge, child, listenerMap);
-    }
-  }
-}
 
 function isCookie(value: unknown): value is BrowserCookie {
   return isRecord(value)
