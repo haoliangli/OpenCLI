@@ -119,6 +119,7 @@ npm install -g @jackwener/opencli@latest
 | **apple-podcasts** | `search` `episodes` `top` | 公开 |
 | **xiaoyuzhou** | `podcast` `podcast-episodes` `episode` | 公开 |
 | **zhihu** | `hot` `search` `question` `download` | 浏览器 |
+| **web** | `read` | 浏览器 |
 | **weixin** | `download` | 浏览器 |
 | **youtube** | `search` `video` `transcript` | 浏览器 |
 | **boss** | `search` `detail` `recommend` `joblist` `greet` `batchgreet` `send` `chatlist` `chatmsg` `invite` `mark` `exchange` `resume` `stats` | 浏览器 |

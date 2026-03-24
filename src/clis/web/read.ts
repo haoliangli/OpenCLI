@@ -10,8 +10,8 @@
  * Pipes through the shared article-download pipeline (Turndown + image download).
  *
  * Usage:
- *   opencli web read --url "https://www.anthropic.com/research/..." --output ./articles
- *   opencli web read --url "https://..." --download-images false
+ *   opencli web read "https://www.anthropic.com/research/..." --output ./articles
+ *   opencli web read "https://..." --download-images false
  */
 
 import { cli, Strategy } from '../../registry.js';
@@ -24,7 +24,7 @@ cli({
   strategy: Strategy.COOKIE,
   navigateBefore: false, // we handle navigation ourselves
   args: [
-    { name: 'url', required: true, help: 'Any web page URL' },
+    { name: 'url', required: true, positional: true, help: 'Any web page URL' },
     { name: 'output', default: './web-articles', help: 'Output directory' },
     { name: 'download-images', type: 'boolean', default: true, help: 'Download images locally' },
     { name: 'wait', type: 'int', default: 3, help: 'Seconds to wait after page load' },

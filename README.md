@@ -117,6 +117,7 @@ Run `opencli list` for the live registry.
 | **apple-podcasts** | `search` `episodes` `top` | Public |
 | **xiaoyuzhou** | `podcast` `podcast-episodes` `episode` | Public |
 | **zhihu** | `hot` `search` `question` `download` | Browser |
+| **web** | `read` | Browser |
 | **weixin** | `download` | Browser |
 | **youtube** | `search` `video` `transcript` | Browser |
 | **boss** | `search` `detail` `recommend` `joblist` `greet` `batchgreet` `send` `chatlist` `chatmsg` `invite` `mark` `exchange` `resume` `stats` | Browser |
