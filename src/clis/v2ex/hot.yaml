@@ -3,7 +3,7 @@ name: hot
 description: V2EX 热门话题
 domain: www.v2ex.com
 strategy: public
-browser: false
+browser: true
 
 args:
   limit:
@@ -12,8 +12,19 @@ args:
     description: Number of topics
 
 pipeline:
-  - fetch:
-      url: https://www.v2ex.com/api/topics/hot.json
+  - navigate: https://www.v2ex.com/api/topics/hot.json
+
+  - evaluate: |
+      (async () => {
+        // 获取页面中的JSON数据
+        const preElement = document.querySelector('pre');
+        if (preElement) {
+          const jsonText = preElement.textContent;
+          const data = JSON.parse(jsonText);
+          return data;
+        }
+        return [];
+      })()
 
   - map:
       rank: ${{ index + 1 }}
