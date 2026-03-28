@@ -1,6 +1,6 @@
 # OpenCLI
 
-> **Make any website, Electron App, or Local Tool your CLI.**  
+> **Make any website, Electron App, or Local Tool your CLI.**
 > Zero risk · Reuse Chrome login · AI-powered discovery · Universal CLI Hub
 
 [![中文文档](https://img.shields.io/badge/docs-%E4%B8%AD%E6%96%87-0F766E?style=flat-square)](./README.zh-CN.md)
@@ -12,7 +12,7 @@ A CLI tool that turns **any website**, **Electron app**, or **local CLI tool** i
 
 **Built for AI Agents** — Configure an instruction in your `AGENT.md` or `.cursorrules` to run `opencli list` via Bash. The AI will automatically discover and invoke all available tools.
 
-**CLI Hub** — Register any local CLI (`opencli register mycli`) so AI agents can discover and call it alongside built-in commands. Auto-installs missing tools via your package manager.
+**CLI Hub** — Register any local CLI (`opencli register mycli`) so AI agents can discover and call it alongside built-in commands. Auto-installs missing tools via your package manager (e.g. if `gh` isn't installed, `opencli gh ...` runs `brew install gh` first then re-executes seamlessly).
 
 **CLI for Electron Apps** — Turn any Electron application into a CLI tool. Recombine, script, and extend apps like Antigravity Ultra from the terminal. AI agents can now control other AI apps natively.
 
@@ -20,8 +20,9 @@ A CLI tool that turns **any website**, **Electron app**, or **local CLI tool** i
 
 ## Highlights
 
-- **CLI All Electron** — CLI-ify apps like Antigravity Ultra! Now AI can control itself natively using cc/openclaw!
+- **CLI All Electron** — CLI-ify apps like Antigravity Ultra! Now AI can control itself natively.
 - **Account-safe** — Reuses Chrome's logged-in state; your credentials never leave the browser.
+- **Anti-detection built-in** — Patches `navigator.webdriver`, stubs `window.chrome`, fakes plugin lists, cleans ChromeDriver/Playwright globals, and strips CDP frames from Error stack traces. Extensive anti-fingerprinting and risk-control evasion measures baked in at every layer.
 - **AI Agent ready** — `explore` discovers APIs, `synthesize` generates adapters, `cascade` finds auth strategies.
 - **External CLI Hub** — Discover, auto-install, and passthrough commands to any external CLI (gh, obsidian, docker, etc). Zero setup.
 - **Self-healing setup** — `opencli doctor` diagnoses and auto-starts the daemon, extension, and live browser connectivity.
@@ -48,24 +49,30 @@ There are many great browser automation tools. Here's when opencli is the right 
 
 > For a detailed comparison with Browser-Use, Crawl4AI, Firecrawl, and others, see the [Comparison Guide](./docs/comparison.md).
 
+---
+
 ## Quick Start
 
-### Install via npm (recommended)
+### 1. Install Browser Bridge Extension
+
+> OpenCLI connects to your browser through a lightweight **Browser Bridge** Chrome Extension + micro-daemon (zero config, auto-start).
+
+1. Go to the GitHub [Releases page](https://github.com/jackwener/opencli/releases) and download the latest `opencli-extension.zip`.
+2. Unzip the file and open `chrome://extensions`, enable **Developer mode** (top-right toggle).
+3. Click **Load unpacked** and select the unzipped folder.
+
+### 2. Install OpenCLI
+
+**Install via npm (recommended)**
 
 ```bash
 npm install -g @jackwener/opencli
 ```
 
-### Install from source (for developers)
+### 3. Verify & Try
 
 ```bash
-git clone git@github.com:jackwener/opencli.git && cd opencli && npm install && npm run build && npm link
-```
-
-### Verify setup
-
-```bash
-opencli doctor                         # Check extension + daemon connectivity
+opencli doctor   # Check extension + daemon connectivity
 ```
 
 **Try it out:**
@@ -82,6 +89,23 @@ opencli bilibili hot --limit 5         # Browser command (requires Extension)
 npm install -g @jackwener/opencli@latest
 ```
 
+---
+
+### For Developers
+
+**Install from source**
+
+```bash
+git clone git@github.com:jackwener/opencli.git && cd opencli && npm install && npm run build && npm link
+```
+
+**Load Source Browser Bridge Extension**
+
+1. Open `chrome://extensions` and enable **Developer mode** (top-right toggle).
+2. Click **Load unpacked** and select the `extension/` directory from this repository.
+
+---
+
 ## Prerequisites
 
 - **Node.js**: >= 20.0.0 (or **Bun** >= 1.0)
@@ -89,31 +113,14 @@ npm install -g @jackwener/opencli@latest
 
 > **⚠️ Important**: Browser commands reuse your Chrome login session. You must be logged into the target website in Chrome before running commands. If you get empty data or errors, check your login status first.
 
-OpenCLI connects to your browser through a lightweight **Browser Bridge** Chrome Extension + micro-daemon (zero config, auto-start).
-
-### Browser Bridge Extension Setup
-
-You can install the extension via either method:
-
-**Method 1: Download Pre-built Release (Recommended)**
-1. Go to the GitHub [Releases page](https://github.com/jackwener/opencli/releases) and download the latest `opencli-extension.zip`.
-2. Unzip the file and open `chrome://extensions`, enable **Developer mode** (top-right toggle).
-3. Click **Load unpacked** and select the unzipped folder.
-
-**Method 2: Load Source (For Developers)**
-1. Open `chrome://extensions` and enable **Developer mode**.
-2. Click **Load unpacked** and select the `extension/` directory from this repository.
-
-That's it! The daemon auto-starts when you run any browser command. No tokens, no manual configuration.
-
 ## Built-in Commands
 
 | Site | Commands |
 |------|----------|
-| **xiaohongshu** | `search` `feed` `user` `download` `publish` `notifications` |
-| **bilibili** | `hot` `search` `history` `feed` `ranking` `download` |
-| **twitter** | `trending` `search` `timeline` `bookmarks` `post` `download` |
-| **reddit** | `hot` `frontpage` `search` `subreddit` `user` `upvote` |
+| **xiaohongshu** | `search` `feed` `user` `download` `publish` `comments` `notifications` `creator-notes` `creator-notes-summary` `creator-note-detail` `creator-profile` `creator-stats` |
+| **bilibili** | `hot` `search` `history` `feed` `ranking` `download` `comments` `dynamic` `favorite` `following` `me` `subtitle` `user-videos` |
+| **twitter** | `trending` `search` `timeline` `bookmarks` `post` `download` `profile` `article` `like` `likes` `notifications` `reply` `reply-dm` `thread` `follow` `unfollow` `followers` `following` `block` `unblock` `bookmark` `unbookmark` `delete` `hide-reply` `accept` |
+| **reddit** | `hot` `frontpage` `popular` `search` `subreddit` `user` `user-posts` `user-comments` `read` `save` `saved` `subscribe` `upvote` `upvoted` `comment` |
 
 65+ adapters in total — **[→ see all supported sites & commands](./docs/adapters/index.md)**
 
@@ -136,9 +143,7 @@ opencli register mycli
 
 ### Desktop App Adapters
 
-Each desktop adapter has its own detailed documentation with commands reference, setup guide, and examples:
-
-If you want to add support for a new Electron desktop app, start with [docs/guide/electron-app-cli.md](./docs/guide/electron-app-cli.md) and the deeper [Electron guide](./docs/advanced/electron.md).
+Control Electron desktop apps directly from the terminal. Each adapter has its own detailed documentation:
 
 | App | Description | Doc |
 |-----|-------------|-----|
@@ -151,34 +156,23 @@ If you want to add support for a new Electron desktop app, start with [docs/guid
 | **Discord** | Discord Desktop — messages, channels, servers | [Doc](./docs/adapters/desktop/discord.md) |
 | **Doubao** | Control Doubao AI desktop app via CDP | [Doc](./docs/adapters/desktop/doubao-app.md) |
 
+To add a new Electron app, start with [docs/guide/electron-app-cli.md](./docs/guide/electron-app-cli.md).
+
 ## Download Support
 
 OpenCLI supports downloading images, videos, and articles from supported platforms.
-
-### Supported Platforms
 
 | Platform | Content Types | Notes |
 |----------|---------------|-------|
 | **xiaohongshu** | Images, Videos | Downloads all media from a note |
 | **bilibili** | Videos | Requires `yt-dlp` installed |
-| **twitter** | Images, Videos | Downloads from user media tab or single tweet |
-| **douban** | Images | Downloads poster / still image lists from movie subjects |
-| **pixiv** | Images | Downloads original-quality illustrations, supports multi-page works |
-| **zhihu** | Articles (Markdown) | Exports articles with optional image download |
-| **weixin** | Articles (Markdown) | Exports WeChat Official Account articles |
+| **twitter** | Images, Videos | From user media tab or single tweet |
+| **douban** | Images | Poster / still image lists |
+| **pixiv** | Images | Original-quality illustrations, multi-page |
+| **zhihu** | Articles (Markdown) | Exports with optional image download |
+| **weixin** | Articles (Markdown) | WeChat Official Account articles |
 
-### Prerequisites
-
-For video downloads from streaming platforms, you need to install `yt-dlp`:
-
-```bash
-# Install yt-dlp
-pip install yt-dlp
-# or
-brew install yt-dlp
-```
-
-### Usage Examples
+For video downloads, install `yt-dlp` first: `brew install yt-dlp`
 
 ```bash
 opencli xiaohongshu download abc123 --output ./xhs
@@ -186,31 +180,26 @@ opencli bilibili download BV1xxx --output ./bilibili
 opencli twitter download elonmusk --limit 20 --output ./twitter
 ```
 
-
-
 ## Output Formats
 
 All built-in commands support `--format` / `-f` with `table` (default), `json`, `yaml`, `md`, and `csv`.
 
 ```bash
-opencli bilibili hot -f json    # JSON (pipe to jq or LLMs)
-opencli bilibili hot -f csv     # CSV
+opencli bilibili hot -f json    # Pipe to jq or LLMs
+opencli bilibili hot -f csv     # Spreadsheet-friendly
 opencli bilibili hot -v         # Verbose: show pipeline debug steps
 ```
 
 ## Plugins
 
-Extend OpenCLI with community-contributed adapters. Plugins use the same YAML/TS format as built-in commands and are automatically discovered at startup.
+Extend OpenCLI with community-contributed adapters:
 
 ```bash
-opencli plugin install github:user/opencli-plugin-my-tool  # Install
-opencli plugin list                                         # List installed
-opencli plugin update my-tool                               # Update to latest
-opencli plugin update --all                                 # Update all installed plugins
-opencli plugin uninstall my-tool                            # Remove
+opencli plugin install github:user/opencli-plugin-my-tool
+opencli plugin list
+opencli plugin update --all
+opencli plugin uninstall my-tool
 ```
-
-`opencli plugin list` also shows the tracked short commit hash when a plugin version is recorded in `~/.opencli/plugins.lock.json`.
 
 | Plugin | Type | Description |
 |--------|------|-------------|
@@ -222,27 +211,16 @@ See [Plugins Guide](./docs/guide/plugins.md) for creating your own plugin.
 
 ## For AI Agents (Developer Guide)
 
-If you are an AI assistant tasked with creating a new command adapter for `opencli`, please follow the AI Agent workflow below:
-
 > **Quick mode**: To generate a single command for a specific page URL, see [CLI-ONESHOT.md](./CLI-ONESHOT.md) — just a URL + one-line goal, 4 steps done.
 
 > **Full mode**: Before writing any adapter code, read [CLI-EXPLORER.md](./CLI-EXPLORER.md). It contains the complete browser exploration workflow, the 5-tier authentication strategy decision tree, and debugging guide.
 
 ```bash
-# 1. Deep Explore — discover APIs, infer capabilities, detect framework
-opencli explore https://example.com --site mysite
-
-# 2. Synthesize — generate YAML adapters from explore artifacts
-opencli synthesize mysite
-
-# 3. Generate — one-shot: explore → synthesize → register
-opencli generate https://example.com --goal "hot"
-
-# 4. Strategy Cascade — auto-probe: PUBLIC → COOKIE → HEADER
-opencli cascade https://api.example.com/data
+opencli explore https://example.com --site mysite   # Discover APIs + capabilities
+opencli synthesize mysite                            # Generate YAML adapters
+opencli generate https://example.com --goal "hot"   # One-shot: explore → synthesize → register
+opencli cascade https://api.example.com/data         # Auto-probe: PUBLIC → COOKIE → HEADER
 ```
-
-Explore outputs to `.opencli/explore/<site>/` (manifest.json, endpoints.json, capabilities.json, auth.json).
 
 ## Testing
 
@@ -250,24 +228,15 @@ See **[TESTING.md](./TESTING.md)** for how to run and write tests.
 
 ## Troubleshooting
 
-- **"Extension not connected"**
-  - Ensure the opencli Browser Bridge extension is installed and **enabled** in `chrome://extensions`.
-- **"attach failed: Cannot access a chrome-extension:// URL"**
-  - Another Chrome extension (e.g. youmind, New Tab Override, or AI assistant extensions) may be interfering. Try **disabling other extensions** temporarily, then retry.
-- **Empty data returns or 'Unauthorized' error**
-  - Your login session in Chrome might have expired. Open a normal Chrome tab, navigate to the target site, and log in or refresh the page.
-- **Node API errors**
-  - Make sure you are using Node.js >= 20. Some dependencies require modern Node APIs.
-- **Daemon issues**
-  - Check daemon status: `curl localhost:19825/status`
-  - View extension logs: `curl localhost:19825/logs`
-
+- **"Extension not connected"** — Ensure the Browser Bridge extension is installed and **enabled** in `chrome://extensions`.
+- **"attach failed: Cannot access a chrome-extension:// URL"** — Another extension may be interfering. Try disabling other extensions temporarily.
+- **Empty data or 'Unauthorized' error** — Your Chrome login session may have expired. Navigate to the target site and log in again.
+- **Node API errors** — Ensure Node.js >= 20. Some dependencies require modern Node APIs.
+- **Daemon issues** — Check status: `curl localhost:19825/status` · View logs: `curl localhost:19825/logs`
 
 ## Star History
 
 [![Star History Chart](https://api.star-history.com/svg?repos=jackwener/opencli&type=Date)](https://star-history.com/#jackwener/opencli&Date)
-
-
 
 ## License
 
