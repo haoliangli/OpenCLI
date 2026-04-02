@@ -49,21 +49,26 @@ export class Page extends BasePage {
   }
 
   async goto(url: string, options?: { waitUntil?: 'load' | 'none'; settleMs?: number }): Promise<void> {
-    const result = await sendCommand('navigate', {
-      url,
-      ...this._cmdOpts(),
-    }) as { tabId?: number };
+    // Pre-generate stealth JS so we can fire it in parallel with navigation.
+    const stealthCode = generateStealthJs();
+
+    // Fire navigation and stealth injection concurrently.
+    // Stealth targets the pre-navigation document (best-effort); we re-inject
+    // after navigation completes to cover the new document.
+    const [navResult] = await Promise.all([
+      sendCommand('navigate', { url, ...this._cmdOpts() }) as Promise<{ tabId?: number }>,
+      sendCommand('exec', { code: stealthCode, ...this._cmdOpts() }).catch(() => {}),
+    ]);
+
     // Remember the tabId and URL for subsequent calls
-    if (result?.tabId) {
-      this._tabId = result.tabId;
+    if (navResult?.tabId) {
+      this._tabId = navResult.tabId;
     }
     this._lastUrl = url;
-    // Inject stealth anti-detection patches (guard flag prevents double-injection).
+
+    // Re-inject stealth after navigation in case the page replaced the document.
     try {
-      await sendCommand('exec', {
-        code: generateStealthJs(),
-        ...this._cmdOpts(),
-      });
+      await sendCommand('exec', { code: stealthCode, ...this._cmdOpts() });
     } catch {
       // Non-fatal: stealth is best-effort
     }
