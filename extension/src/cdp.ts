@@ -79,6 +79,16 @@ export async function ensureAttached(tabId: number, aggressiveRetry: boolean = f
   }
 
   if (lastError) {
+    // Log detailed diagnostics for debugging extension conflicts
+    let finalUrl = 'unknown';
+    let finalWindowId = 'unknown';
+    try {
+      const tab = await chrome.tabs.get(tabId);
+      finalUrl = tab.url ?? 'undefined';
+      finalWindowId = String(tab.windowId);
+    } catch { /* tab gone */ }
+    console.warn(`[opencli] attach failed for tab ${tabId}: url=${finalUrl}, windowId=${finalWindowId}, error=${lastError}`);
+
     const hint = lastError.includes('chrome-extension://')
       ? '. Tip: another Chrome extension may be interfering — try disabling other extensions'
       : '';

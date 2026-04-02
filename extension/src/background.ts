@@ -350,8 +350,19 @@ async function resolveTab(tabId: number | undefined, workspace: string, initialU
       const session = automationSessions.get(workspace);
       const matchesSession = session ? tab.windowId === session.windowId : false;
       if (isDebuggableUrl(tab.url) && matchesSession) return { tabId, tab };
-      if (session && !matchesSession) {
-        console.warn(`[opencli] Tab ${tabId} is not bound to workspace ${workspace}, re-resolving`);
+      if (session && !matchesSession && isDebuggableUrl(tab.url)) {
+        // Tab drifted to another window but content is still valid.
+        // Try to move it back instead of abandoning it.
+        console.warn(`[opencli] Tab ${tabId} drifted to window ${tab.windowId}, moving back to ${session.windowId}`);
+        try {
+          await chrome.tabs.move(tabId, { windowId: session.windowId, index: -1 });
+          const moved = await chrome.tabs.get(tabId);
+          if (moved.windowId === session.windowId && isDebuggableUrl(moved.url)) {
+            return { tabId, tab: moved };
+          }
+        } catch (moveErr) {
+          console.warn(`[opencli] Failed to move tab back: ${moveErr}`);
+        }
       } else if (!isDebuggableUrl(tab.url)) {
         console.warn(`[opencli] Tab ${tabId} URL is not debuggable (${tab.url}), re-resolving`);
       }
@@ -502,7 +513,22 @@ async function handleNavigate(cmd: Command, workspace: string): Promise<Result> 
     }, 15000);
   });
 
-  const tab = await chrome.tabs.get(tabId);
+  let tab = await chrome.tabs.get(tabId);
+
+  // Post-navigation drift detection: if the tab moved to another window
+  // during navigation (e.g. a tab-management extension regrouped it),
+  // try to move it back to maintain session isolation.
+  const session = automationSessions.get(workspace);
+  if (session && tab.windowId !== session.windowId) {
+    console.warn(`[opencli] Tab ${tabId} drifted to window ${tab.windowId} during navigation, moving back to ${session.windowId}`);
+    try {
+      await chrome.tabs.move(tabId, { windowId: session.windowId, index: -1 });
+      tab = await chrome.tabs.get(tabId);
+    } catch (moveErr) {
+      console.warn(`[opencli] Failed to recover drifted tab: ${moveErr}`);
+    }
+  }
+
   return {
     id: cmd.id,
     ok: true,
