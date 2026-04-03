@@ -149,33 +149,53 @@ function getTurnsScript(): string {
         return '';
       };
 
-      const extractText = (root) => {
-        const selectors = [
-          '[data-testid="message_text_content"]',
-          '[data-testid="message_content"]',
-          '[data-testid*="message_text"]',
-          '[data-testid*="message_content"]',
-          '[class*="message-text"]',
-          '[class*="message-content"]',
-        ];
+      const messageTextSelectors = [
+        '[data-testid="message_text_content"]',
+        '[data-testid="message_content"]',
+        '[data-testid*="message_text"]',
+        '[data-testid*="message_content"]',
+        '[class*="message-text"]',
+        '[class*="message-content"]',
+      ];
+      const messageImageSelector = messageTextSelectors.map((s) => s + ' img').join(', ');
 
+      const extractTextChunks = (root) => {
         const chunks = [];
         const seen = new Set();
-        for (const selector of selectors) {
+        for (const selector of messageTextSelectors) {
           const nodes = Array.from(root.querySelectorAll(selector))
             .filter((el) => isVisible(el))
             .map((el) => clean(el.innerText || el.textContent || ''))
             .filter(Boolean);
+
           for (const nodeText of nodes) {
             if (seen.has(nodeText)) continue;
             seen.add(nodeText);
             chunks.push(nodeText);
           }
+
           if (chunks.length > 0) break;
         }
+        return chunks;
+      };
 
-        if (chunks.length > 0) return clean(chunks.join('\\n'));
-        return clean(root.innerText || root.textContent || '');
+      const extractImageLines = (root) => Array.from(root.querySelectorAll(messageImageSelector))
+          .filter((el) => el instanceof HTMLImageElement && isVisible(el))
+          .map((el) => {
+            const width = el.naturalWidth || el.width || 0;
+            const height = el.naturalHeight || el.height || 0;
+            if (width > 0 && height > 0 && width <= 48 && height <= 48) return '';
+            const url = clean(el.currentSrc || el.src || '');
+            return /^https?:\\/\\//i.test(url) ? 'Image: ' + url : '';
+          })
+          .filter((line, index, items) => Boolean(line) && items.indexOf(line) === index);
+
+      const extractText = (root) => {
+        const chunks = extractTextChunks(root);
+        const text = chunks.length > 0 ? clean(chunks.join('\\n')) : clean(root.innerText || root.textContent || '');
+        const imageLines = extractImageLines(root);
+        if (imageLines.length === 0) return text;
+        return text ? text + '\\n' + imageLines.join('\\n') : imageLines.join('\\n');
       };
 
       const messageList = document.querySelector('[data-testid="message-list"]');

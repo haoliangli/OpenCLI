@@ -20,14 +20,12 @@ var WS_RECONNECT_MAX_DELAY = 5e3;
 */
 var attached = /* @__PURE__ */ new Set();
 var networkCaptures = /* @__PURE__ */ new Map();
-/** Internal blank page used when no user URL is provided. */
-var BLANK_PAGE$1 = "data:text/html,<html></html>";
-/** Check if a URL can be attached via CDP — only allow http(s) and our internal blank page. */
+/** Check if a URL can be attached via CDP — only allow http(s) and blank pages. */
 function isDebuggableUrl$1(url) {
 	if (!url) return true;
-	return url.startsWith("http://") || url.startsWith("https://") || url === BLANK_PAGE$1;
+	return url.startsWith("http://") || url.startsWith("https://") || url === "about:blank" || url.startsWith("data:");
 }
-async function ensureAttached(tabId) {
+async function ensureAttached(tabId, aggressiveRetry = false) {
 	try {
 		const tab = await chrome.tabs.get(tabId);
 		if (!isDebuggableUrl$1(tab.url)) {
@@ -48,43 +46,76 @@ async function ensureAttached(tabId) {
 	} catch {
 		attached.delete(tabId);
 	}
-	try {
+	const MAX_ATTACH_RETRIES = aggressiveRetry ? 5 : 2;
+	const RETRY_DELAY_MS = aggressiveRetry ? 1500 : 500;
+	let lastError = "";
+	for (let attempt = 1; attempt <= MAX_ATTACH_RETRIES; attempt++) try {
+		try {
+			await chrome.debugger.detach({ tabId });
+		} catch {}
 		await chrome.debugger.attach({ tabId }, "1.3");
+		lastError = "";
+		break;
 	} catch (e) {
-		const msg = e instanceof Error ? e.message : String(e);
-		const hint = msg.includes("chrome-extension://") ? ". Tip: another Chrome extension may be interfering — try disabling other extensions" : "";
-		if (msg.includes("Another debugger is already attached")) {
+		lastError = e instanceof Error ? e.message : String(e);
+		if (attempt < MAX_ATTACH_RETRIES) {
+			console.warn(`[opencli] attach attempt ${attempt}/${MAX_ATTACH_RETRIES} failed: ${lastError}, retrying in ${RETRY_DELAY_MS}ms...`);
+			await new Promise((resolve) => setTimeout(resolve, RETRY_DELAY_MS));
 			try {
-				await chrome.debugger.detach({ tabId });
-			} catch {}
-			try {
-				await chrome.debugger.attach({ tabId }, "1.3");
+				const tab = await chrome.tabs.get(tabId);
+				if (!isDebuggableUrl$1(tab.url)) {
+					lastError = `Tab URL changed to ${tab.url} during retry`;
+					break;
+				}
 			} catch {
-				throw new Error(`attach failed: ${msg}${hint}`);
+				lastError = `Tab ${tabId} no longer exists`;
+				break;
 			}
-		} else throw new Error(`attach failed: ${msg}${hint}`);
+		}
+	}
+	if (lastError) {
+		let finalUrl = "unknown";
+		let finalWindowId = "unknown";
+		try {
+			const tab = await chrome.tabs.get(tabId);
+			finalUrl = tab.url ?? "undefined";
+			finalWindowId = String(tab.windowId);
+		} catch {}
+		console.warn(`[opencli] attach failed for tab ${tabId}: url=${finalUrl}, windowId=${finalWindowId}, error=${lastError}`);
+		const hint = lastError.includes("chrome-extension://") ? ". Tip: another Chrome extension may be interfering — try disabling other extensions" : "";
+		throw new Error(`attach failed: ${lastError}${hint}`);
 	}
 	attached.add(tabId);
 	try {
 		await chrome.debugger.sendCommand({ tabId }, "Runtime.enable");
 	} catch {}
-	try {
-		await chrome.debugger.sendCommand({ tabId }, "Debugger.enable");
-		await chrome.debugger.sendCommand({ tabId }, "Debugger.setBreakpointsActive", { active: false });
-	} catch {}
 }
-async function evaluate(tabId, expression) {
-	await ensureAttached(tabId);
-	const result = await chrome.debugger.sendCommand({ tabId }, "Runtime.evaluate", {
-		expression,
-		returnByValue: true,
-		awaitPromise: true
-	});
-	if (result.exceptionDetails) {
-		const errMsg = result.exceptionDetails.exception?.description || result.exceptionDetails.text || "Eval error";
-		throw new Error(errMsg);
+async function evaluate(tabId, expression, aggressiveRetry = false) {
+	const MAX_EVAL_RETRIES = aggressiveRetry ? 3 : 2;
+	for (let attempt = 1; attempt <= MAX_EVAL_RETRIES; attempt++) try {
+		await ensureAttached(tabId, aggressiveRetry);
+		const result = await chrome.debugger.sendCommand({ tabId }, "Runtime.evaluate", {
+			expression,
+			returnByValue: true,
+			awaitPromise: true
+		});
+		if (result.exceptionDetails) {
+			const errMsg = result.exceptionDetails.exception?.description || result.exceptionDetails.text || "Eval error";
+			throw new Error(errMsg);
+		}
+		return result.result?.value;
+	} catch (e) {
+		const msg = e instanceof Error ? e.message : String(e);
+		const isNavigateError = msg.includes("Inspected target navigated") || msg.includes("Target closed");
+		if ((isNavigateError || msg.includes("attach failed") || msg.includes("Debugger is not attached") || msg.includes("chrome-extension://")) && attempt < MAX_EVAL_RETRIES) {
+			attached.delete(tabId);
+			const retryMs = isNavigateError ? 200 : 500;
+			await new Promise((resolve) => setTimeout(resolve, retryMs));
+			continue;
+		}
+		throw e;
 	}
-	return result.result?.value;
+	throw new Error("evaluate: max retries exhausted");
 }
 var evaluateAsync = evaluate;
 /**
@@ -381,8 +412,11 @@ function resetWindowIdleTimer(workspace) {
 		automationSessions.delete(workspace);
 	}, WINDOW_IDLE_TIMEOUT);
 }
-/** Get or create the dedicated automation window. */
-async function getAutomationWindow(workspace) {
+/** Get or create the dedicated automation window.
+*  @param initialUrl — if provided (http/https), used as the initial page instead of about:blank.
+*    This avoids an extra blank-page→target-domain navigation on first command.
+*/
+async function getAutomationWindow(workspace, initialUrl) {
 	const existing = automationSessions.get(workspace);
 	if (existing) try {
 		await chrome.windows.get(existing.windowId);
@@ -390,23 +424,39 @@ async function getAutomationWindow(workspace) {
 	} catch {
 		automationSessions.delete(workspace);
 	}
+	const startUrl = initialUrl && isSafeNavigationUrl(initialUrl) ? initialUrl : BLANK_PAGE;
+	const win = await chrome.windows.create({
+		url: startUrl,
+		focused: false,
+		width: 1280,
+		height: 900,
+		type: "normal"
+	});
 	const session = {
-		windowId: (await chrome.windows.create({
-			url: BLANK_PAGE,
-			focused: false,
-			width: 1280,
-			height: 900,
-			type: "normal"
-		})).id,
+		windowId: win.id,
 		idleTimer: null,
 		idleDeadlineAt: Date.now() + WINDOW_IDLE_TIMEOUT,
 		owned: true,
 		preferredTabId: null
 	};
 	automationSessions.set(workspace, session);
-	console.log(`[opencli] Created automation window ${session.windowId} (${workspace})`);
+	console.log(`[opencli] Created automation window ${session.windowId} (${workspace}, start=${startUrl})`);
 	resetWindowIdleTimer(workspace);
-	await new Promise((resolve) => setTimeout(resolve, 200));
+	const tabs = await chrome.tabs.query({ windowId: win.id });
+	if (tabs[0]?.id) await new Promise((resolve) => {
+		const timeout = setTimeout(resolve, 500);
+		const listener = (tabId, info) => {
+			if (tabId === tabs[0].id && info.status === "complete") {
+				chrome.tabs.onUpdated.removeListener(listener);
+				clearTimeout(timeout);
+				resolve();
+			}
+		};
+		if (tabs[0].status === "complete") {
+			clearTimeout(timeout);
+			resolve();
+		} else chrome.tabs.onUpdated.addListener(listener);
+	});
 	return session.windowId;
 }
 chrome.windows.onRemoved.addListener((windowId) => {
@@ -452,6 +502,7 @@ async function handleCommand(cmd) {
 			case "cookies": return await handleCookies(cmd);
 			case "screenshot": return await handleScreenshot(cmd, workspace);
 			case "close-window": return await handleCloseWindow(cmd, workspace);
+			case "cdp": return await handleCdp(cmd, workspace);
 			case "sessions": return await handleSessions(cmd);
 			case "set-file-input": return await handleSetFileInput(cmd, workspace);
 			case "insert-text": return await handleInsertText(cmd, workspace);
@@ -473,11 +524,11 @@ async function handleCommand(cmd) {
 	}
 }
 /** Internal blank page used when no user URL is provided. */
-var BLANK_PAGE = "data:text/html,<html></html>";
-/** Check if a URL can be attached via CDP — only allow http(s) and our internal blank page. */
+var BLANK_PAGE = "about:blank";
+/** Check if a URL can be attached via CDP — only allow http(s) and blank pages. */
 function isDebuggableUrl(url) {
 	if (!url) return true;
-	return url.startsWith("http://") || url.startsWith("https://") || url === BLANK_PAGE;
+	return url.startsWith("http://") || url.startsWith("https://") || url === "about:blank" || url.startsWith("data:");
 }
 /** Check if a URL is safe for user-facing navigation (http/https only). */
 function isSafeNavigationUrl(url) {
@@ -517,29 +568,6 @@ function matchesBindCriteria(tab, cmd) {
 	}
 	return true;
 }
-function isNotebooklmWorkspace(workspace) {
-	return workspace === "site:notebooklm";
-}
-function classifyNotebooklmUrl(url) {
-	if (!url) return "other";
-	try {
-		const parsed = new URL(url);
-		if (parsed.hostname !== "notebooklm.google.com") return "other";
-		return parsed.pathname.startsWith("/notebook/") ? "notebook" : "home";
-	} catch {
-		return "other";
-	}
-}
-function scoreWorkspaceTab(workspace, tab) {
-	if (!tab.id || !isDebuggableUrl(tab.url)) return -1;
-	if (isNotebooklmWorkspace(workspace)) {
-		const kind = classifyNotebooklmUrl(tab.url);
-		if (kind === "other") return -1;
-		if (kind === "notebook") return tab.active ? 400 : 300;
-		return tab.active ? 200 : 100;
-	}
-	return -1;
-}
 function setWorkspaceSession(workspace, session) {
 	const existing = automationSessions.get(workspace);
 	if (existing?.idleTimer) clearTimeout(existing.idleTimer);
@@ -549,64 +577,65 @@ function setWorkspaceSession(workspace, session) {
 		idleDeadlineAt: Date.now() + WINDOW_IDLE_TIMEOUT
 	});
 }
-async function maybeBindWorkspaceToExistingTab(workspace) {
-	if (!isNotebooklmWorkspace(workspace)) return null;
-	const tabs = await chrome.tabs.query({});
-	let bestTab = null;
-	let bestScore = -1;
-	for (const tab of tabs) {
-		const score = scoreWorkspaceTab(workspace, tab);
-		if (score > bestScore) {
-			bestScore = score;
-			bestTab = tab;
-		}
-	}
-	if (!bestTab?.id || bestScore < 0) return null;
-	setWorkspaceSession(workspace, {
-		windowId: bestTab.windowId,
-		owned: false,
-		preferredTabId: bestTab.id
-	});
-	console.log(`[opencli] Workspace ${workspace} bound to existing tab ${bestTab.id} in window ${bestTab.windowId}`);
-	resetWindowIdleTimer(workspace);
-	return bestTab.id;
-}
 /**
-* Resolve target tab in the automation window.
-* If explicit tabId is given, use that directly.
-* Otherwise, find or create a tab in the dedicated automation window.
+* Resolve target tab in the automation window, returning both the tabId and
+* the Tab object (when available) so callers can skip a redundant chrome.tabs.get().
 */
-async function resolveTabId(tabId, workspace) {
+async function resolveTab(tabId, workspace, initialUrl) {
 	if (tabId !== void 0) try {
 		const tab = await chrome.tabs.get(tabId);
 		const session = automationSessions.get(workspace);
 		const matchesSession = session ? session.preferredTabId !== null ? session.preferredTabId === tabId : tab.windowId === session.windowId : false;
-		if (isDebuggableUrl(tab.url) && matchesSession) return tabId;
-		if (session && !matchesSession) console.warn(`[opencli] Tab ${tabId} is not bound to workspace ${workspace}, re-resolving`);
-		else if (!isDebuggableUrl(tab.url)) console.warn(`[opencli] Tab ${tabId} URL is not debuggable (${tab.url}), re-resolving`);
+		if (isDebuggableUrl(tab.url) && matchesSession) return {
+			tabId,
+			tab
+		};
+		if (session && !matchesSession && session.preferredTabId === null && isDebuggableUrl(tab.url)) {
+			console.warn(`[opencli] Tab ${tabId} drifted to window ${tab.windowId}, moving back to ${session.windowId}`);
+			try {
+				await chrome.tabs.move(tabId, {
+					windowId: session.windowId,
+					index: -1
+				});
+				const moved = await chrome.tabs.get(tabId);
+				if (moved.windowId === session.windowId && isDebuggableUrl(moved.url)) return {
+					tabId,
+					tab: moved
+				};
+			} catch (moveErr) {
+				console.warn(`[opencli] Failed to move tab back: ${moveErr}`);
+			}
+		} else if (!isDebuggableUrl(tab.url)) console.warn(`[opencli] Tab ${tabId} URL is not debuggable (${tab.url}), re-resolving`);
 	} catch {
 		console.warn(`[opencli] Tab ${tabId} no longer exists, re-resolving`);
 	}
-	const adoptedTabId = await maybeBindWorkspaceToExistingTab(workspace);
-	if (adoptedTabId !== null) return adoptedTabId;
 	const existingSession = automationSessions.get(workspace);
 	if (existingSession?.preferredTabId !== null) try {
 		const preferredTab = await chrome.tabs.get(existingSession.preferredTabId);
-		if (isDebuggableUrl(preferredTab.url)) return preferredTab.id;
+		if (isDebuggableUrl(preferredTab.url)) return {
+			tabId: preferredTab.id,
+			tab: preferredTab
+		};
 	} catch {
 		automationSessions.delete(workspace);
 	}
-	const windowId = await getAutomationWindow(workspace);
+	const windowId = await getAutomationWindow(workspace, initialUrl);
 	const tabs = await chrome.tabs.query({ windowId });
 	const debuggableTab = tabs.find((t) => t.id && isDebuggableUrl(t.url));
-	if (debuggableTab?.id) return debuggableTab.id;
+	if (debuggableTab?.id) return {
+		tabId: debuggableTab.id,
+		tab: debuggableTab
+	};
 	const reuseTab = tabs.find((t) => t.id);
 	if (reuseTab?.id) {
 		await chrome.tabs.update(reuseTab.id, { url: BLANK_PAGE });
 		await new Promise((resolve) => setTimeout(resolve, 300));
 		try {
 			const updated = await chrome.tabs.get(reuseTab.id);
-			if (isDebuggableUrl(updated.url)) return reuseTab.id;
+			if (isDebuggableUrl(updated.url)) return {
+				tabId: reuseTab.id,
+				tab: updated
+			};
 			console.warn(`[opencli] data: URI was intercepted (${updated.url}), creating fresh tab`);
 		} catch {}
 	}
@@ -616,7 +645,14 @@ async function resolveTabId(tabId, workspace) {
 		active: true
 	});
 	if (!newTab.id) throw new Error("Failed to create tab in automation window");
-	return newTab.id;
+	return {
+		tabId: newTab.id,
+		tab: newTab
+	};
+}
+/** Convenience wrapper returning just the tabId (used by most handlers) */
+async function resolveTabId(tabId, workspace, initialUrl) {
+	return (await resolveTab(tabId, workspace, initialUrl)).tabId;
 }
 async function listAutomationTabs(workspace) {
 	const session = automationSessions.get(workspace);
@@ -645,7 +681,8 @@ async function handleExec(cmd, workspace) {
 	};
 	const tabId = await resolveTabId(cmd.tabId, workspace);
 	try {
-		const data = await evaluateAsync(tabId, cmd.code);
+		const aggressive = workspace.startsWith("operate:");
+		const data = await evaluateAsync(tabId, cmd.code, aggressive);
 		return {
 			id: cmd.id,
 			ok: true,
@@ -670,8 +707,9 @@ async function handleNavigate(cmd, workspace) {
 		ok: false,
 		error: "Blocked URL scheme -- only http:// and https:// are allowed"
 	};
-	const tabId = await resolveTabId(cmd.tabId, workspace);
-	const beforeTab = await chrome.tabs.get(tabId);
+	const resolved = await resolveTab(cmd.tabId, workspace, cmd.url);
+	const tabId = resolved.tabId;
+	const beforeTab = resolved.tab ?? await chrome.tabs.get(tabId);
 	const beforeNormalized = normalizeUrlForComparison(beforeTab.url);
 	const targetUrl = cmd.url;
 	if (beforeTab.status === "complete" && isTargetUrl(beforeTab.url, targetUrl)) return {
@@ -719,7 +757,20 @@ async function handleNavigate(cmd, workspace) {
 			finish();
 		}, 15e3);
 	});
-	const tab = await chrome.tabs.get(tabId);
+	let tab = await chrome.tabs.get(tabId);
+	const session = automationSessions.get(workspace);
+	if (session && tab.windowId !== session.windowId) {
+		console.warn(`[opencli] Tab ${tabId} drifted to window ${tab.windowId} during navigation, moving back to ${session.windowId}`);
+		try {
+			await chrome.tabs.move(tabId, {
+				windowId: session.windowId,
+				index: -1
+			});
+			tab = await chrome.tabs.get(tabId);
+		} catch (moveErr) {
+			console.warn(`[opencli] Failed to recover drifted tab: ${moveErr}`);
+		}
+	}
 	return {
 		id: cmd.id,
 		ok: true,
@@ -875,6 +926,52 @@ async function handleScreenshot(cmd, workspace) {
 			quality: cmd.quality,
 			fullPage: cmd.fullPage
 		});
+		return {
+			id: cmd.id,
+			ok: true,
+			data
+		};
+	} catch (err) {
+		return {
+			id: cmd.id,
+			ok: false,
+			error: err instanceof Error ? err.message : String(err)
+		};
+	}
+}
+/** CDP methods permitted via the 'cdp' passthrough action. */
+var CDP_ALLOWLIST = new Set([
+	"Accessibility.getFullAXTree",
+	"DOM.getDocument",
+	"DOM.getBoxModel",
+	"DOM.getContentQuads",
+	"DOM.querySelectorAll",
+	"DOM.scrollIntoViewIfNeeded",
+	"DOMSnapshot.captureSnapshot",
+	"Input.dispatchMouseEvent",
+	"Input.dispatchKeyEvent",
+	"Input.insertText",
+	"Page.getLayoutMetrics",
+	"Page.captureScreenshot",
+	"Runtime.enable",
+	"Emulation.setDeviceMetricsOverride",
+	"Emulation.clearDeviceMetricsOverride"
+]);
+async function handleCdp(cmd, workspace) {
+	if (!cmd.cdpMethod) return {
+		id: cmd.id,
+		ok: false,
+		error: "Missing cdpMethod"
+	};
+	if (!CDP_ALLOWLIST.has(cmd.cdpMethod)) return {
+		id: cmd.id,
+		ok: false,
+		error: `CDP method not permitted: ${cmd.cdpMethod}`
+	};
+	const tabId = await resolveTabId(cmd.tabId, workspace);
+	try {
+		await ensureAttached(tabId, workspace.startsWith("operate:"));
+		const data = await chrome.debugger.sendCommand({ tabId }, cmd.cdpMethod, cmd.cdpParams ?? {});
 		return {
 			id: cmd.id,
 			ok: true,

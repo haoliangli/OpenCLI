@@ -72,6 +72,9 @@ export default defineConfig({
                 { text: 'Band', link: '/adapters/browser/band' },
                 { text: 'Chaoxing', link: '/adapters/browser/chaoxing' },
                 { text: 'Grok', link: '/adapters/browser/grok' },
+                { text: 'Amazon', link: '/adapters/browser/amazon' },
+                { text: 'Gemini', link: '/adapters/browser/gemini' },
+                { text: 'Yuanbao', link: '/adapters/browser/yuanbao' },
                 { text: 'NotebookLM', link: '/adapters/browser/notebooklm' },
                 { text: 'WeRead', link: '/adapters/browser/weread' },
                 { text: 'Douban', link: '/adapters/browser/douban' },
@@ -89,6 +92,7 @@ export default defineConfig({
                 { text: 'TikTok', link: '/adapters/browser/tiktok' },
                 { text: 'Web (Generic)', link: '/adapters/browser/web' },
                 { text: 'Weixin', link: '/adapters/browser/weixin' },
+                { text: 'Xianyu', link: '/adapters/browser/xianyu' },
               ],
             },
             {
