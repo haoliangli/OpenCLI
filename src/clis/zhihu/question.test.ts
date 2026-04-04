@@ -4,7 +4,7 @@ import { AuthRequiredError, CliError } from '../../errors.js';
 import './question.js';
 
 describe('zhihu question', () => {
-  it('returns answers even when the unused question detail request fails', async () => {
+  it('returns answers from the Zhihu API', async () => {
     const cmd = getRegistry().get('zhihu/question');
     expect(cmd?.func).toBeTypeOf('function');
 
@@ -13,22 +13,17 @@ describe('zhihu question', () => {
       expect(js).toContain('questions/2021881398772981878/answers?limit=3');
       expect(js).toContain("credentials: 'include'");
       return {
-        ok: true,
-        answers: [
+        data: [
           {
-            rank: 1,
-            author: 'alice',
-            votes: 12,
+            author: { name: 'alice' },
+            voteup_count: 12,
             content: 'Hello Zhihu',
           },
         ],
       };
     });
 
-    const page = {
-      goto,
-      evaluate,
-    } as any;
+    const page = { goto, evaluate } as any;
 
     await expect(
       cmd!.func!(page, { id: '2021881398772981878', limit: 3 }),
@@ -47,11 +42,9 @@ describe('zhihu question', () => {
 
   it('maps auth-like answer failures to AuthRequiredError', async () => {
     const cmd = getRegistry().get('zhihu/question');
-    expect(cmd?.func).toBeTypeOf('function');
-
     const page = {
       goto: vi.fn().mockResolvedValue(undefined),
-      evaluate: vi.fn().mockResolvedValue({ ok: false, status: 403 }),
+      evaluate: vi.fn().mockResolvedValue({ __httpError: 403 }),
     } as any;
 
     await expect(
@@ -59,44 +52,38 @@ describe('zhihu question', () => {
     ).rejects.toBeInstanceOf(AuthRequiredError);
   });
 
-  it('preserves non-auth fetch failures as CliError instead of login errors', async () => {
+  it('preserves non-auth fetch failures as CliError', async () => {
     const cmd = getRegistry().get('zhihu/question');
-    expect(cmd?.func).toBeTypeOf('function');
-
     const page = {
       goto: vi.fn().mockResolvedValue(undefined),
-      evaluate: vi.fn().mockResolvedValue({ ok: false, status: 500 }),
+      evaluate: vi.fn().mockResolvedValue({ __httpError: 500 }),
     } as any;
 
     await expect(
       cmd!.func!(page, { id: '2021881398772981878', limit: 3 }),
     ).rejects.toMatchObject({
       code: 'FETCH_ERROR',
-      message: 'Zhihu question answers request failed with HTTP 500',
+      message: 'Zhihu question answers request failed (HTTP 500)',
     });
   });
 
-  it('surfaces browser-side fetch exceptions instead of HTTP unknown', async () => {
+  it('handles null evaluate response as fetch error', async () => {
     const cmd = getRegistry().get('zhihu/question');
-    expect(cmd?.func).toBeTypeOf('function');
-
     const page = {
       goto: vi.fn().mockResolvedValue(undefined),
-      evaluate: vi.fn().mockResolvedValue({ ok: false, status: 0, error: 'Failed to fetch' }),
+      evaluate: vi.fn().mockResolvedValue(null),
     } as any;
 
     await expect(
       cmd!.func!(page, { id: '2021881398772981878', limit: 3 }),
     ).rejects.toMatchObject({
       code: 'FETCH_ERROR',
-      message: 'Zhihu question answers request failed: Failed to fetch',
+      message: 'Zhihu question answers request failed',
     });
   });
 
   it('rejects non-numeric question IDs', async () => {
     const cmd = getRegistry().get('zhihu/question');
-    expect(cmd?.func).toBeTypeOf('function');
-
     const page = { goto: vi.fn(), evaluate: vi.fn() } as any;
 
     await expect(
