@@ -1,6 +1,10 @@
 import * as fs from 'node:fs';
+import * as os from 'node:os';
+import * as path from 'node:path';
 
 import { afterEach, describe, expect, it, vi } from 'vitest';
+
+const TRACE_OUTPUT_PATH = path.join(os.tmpdir(), 'instagram_post_protocol_trace.json');
 
 import type { BrowserCookie, IPage } from '../../../types.js';
 import {
@@ -16,7 +20,7 @@ describe('instagram protocol capture helpers', () => {
   afterEach(() => {
     vi.restoreAllMocks();
     delete process.env.OPENCLI_INSTAGRAM_CAPTURE;
-    try { fs.rmSync('/tmp/instagram_post_protocol_trace.json', { force: true }); } catch {}
+    try { fs.rmSync(TRACE_OUTPUT_PATH, { force: true }); } catch {}
   });
 
   it('installs the protocol capture patch in page context', async () => {
@@ -85,7 +89,7 @@ describe('instagram protocol capture helpers', () => {
 
     await dumpInstagramProtocolCaptureIfEnabled(page);
 
-    const raw = fs.readFileSync('/tmp/instagram_post_protocol_trace.json', 'utf8');
+    const raw = fs.readFileSync(TRACE_OUTPUT_PATH, 'utf8');
     expect(raw).toContain('rupload_igphoto');
   });
 
@@ -97,7 +101,7 @@ describe('instagram protocol capture helpers', () => {
     await dumpInstagramProtocolCaptureIfEnabled(page);
 
     expect(page.evaluate).not.toHaveBeenCalled();
-    expect(fs.existsSync('/tmp/instagram_post_protocol_trace.json')).toBe(false);
+    expect(fs.existsSync(TRACE_OUTPUT_PATH)).toBe(false);
   });
 });
 

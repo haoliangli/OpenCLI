@@ -1,11 +1,13 @@
 import * as fs from 'node:fs';
+import * as os from 'node:os';
+import * as path from 'node:path';
 
 import type { BrowserCookie, IPage } from '../../../types.js';
 import { resolveInstagramRuntimeInfo } from './runtime-info.js';
 
 const DEFAULT_CAPTURE_VAR = '__opencli_ig_protocol_capture';
 const DEFAULT_CAPTURE_ERRORS_VAR = '__opencli_ig_protocol_capture_errors';
-const TRACE_OUTPUT_PATH = '/tmp/instagram_post_protocol_trace.json';
+const TRACE_OUTPUT_PATH = path.join(os.tmpdir(), 'instagram_post_protocol_trace.json');
 const INSTAGRAM_PROTOCOL_CAPTURE_PATTERN = [
   '/rupload_igphoto/',
   '/rupload_igvideo/',

@@ -2,7 +2,6 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 
-import { Page as BrowserPage } from '../../browser/page.js';
 import { cli, Strategy } from '../../registry.js';
 import { ArgumentError, AuthRequiredError, CommandExecutionError } from '../../errors.js';
 import type { BrowserCookie, IPage } from '../../types.js';
@@ -267,12 +266,13 @@ async function waitForVideoPreview(page: IPage, maxWaitSeconds = 20): Promise<vo
     }
     if (attempt < maxWaitSeconds * 2 - 1) await page.wait({ time: 0.5 });
   }
-  await page.screenshot({ path: '/tmp/instagram_reel_preview_debug.png' });
+  const debugPath = path.join(os.tmpdir(), 'instagram_reel_preview_debug.png');
+  await page.screenshot({ path: debugPath });
   throw new CommandExecutionError(
     'Instagram reel preview did not appear after upload',
     lastDetail
-      ? `Inspect /tmp/instagram_reel_preview_debug.png. Last visible dialog text: ${lastDetail}`
-      : 'Inspect /tmp/instagram_reel_preview_debug.png for the upload state',
+      ? `Inspect ${debugPath}. Last visible dialog text: ${lastDetail}`
+      : `Inspect ${debugPath} for the upload state`,
   );
 }
 
@@ -857,26 +857,13 @@ cli({
     };
 
     try {
-      if (!process.env.VITEST) {
-        const runIsolated = async (): Promise<InstagramReelSuccessRow[]> => {
-          const isolatedPage = new BrowserPage(`site:instagram-reel-${Date.now()}`);
-          try {
-            return await run(isolatedPage, new Set());
-          } finally {
-            await isolatedPage.closeWindow?.();
-          }
-        };
-
-        try {
-          return await runIsolated();
-        } catch (error) {
-          if (!isRecoverableReelSessionError(error)) throw error;
-          return await runIsolated();
-        }
-      }
-
       const existingMediaPaths = await captureExistingProfileMediaPaths(browserPage);
-      return await run(browserPage, existingMediaPaths);
+      try {
+        return await run(browserPage, existingMediaPaths);
+      } catch (error) {
+        if (!isRecoverableReelSessionError(error)) throw error;
+        return await run(browserPage, existingMediaPaths);
+      }
     } finally {
       if (preparedUpload.cleanupPath) {
         fs.rmSync(preparedUpload.cleanupPath, { force: true });
