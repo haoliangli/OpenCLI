@@ -57,5 +57,8 @@ describe('zhihu comment', () => {
     expect(page.evaluate.mock.calls[1][0]).not.toContain('commentTrigger');
     expect(page.evaluate.mock.calls[2][0]).toContain("node.getAttribute('data-answerid')");
     expect(page.evaluate.mock.calls[2][0]).toContain("node.getAttribute('data-zop-question-answer')");
+    expect(page.evaluate.mock.calls[5][0]).toContain('const readCommentAuthorSlug = (node) =>');
+    expect(page.evaluate.mock.calls[5][0]).toContain('const commentAuthorScopeSelector = ".CommentItemV2-head, .CommentItem-head, .CommentItemV2-meta, .CommentItem-meta, .CommentItemV2-metaSibling, [data-comment-author], [itemprop=\\"author\\"]"');
+    expect(page.evaluate.mock.calls[5][0]).not.toContain("card?.querySelector('a[href^=\"/people/\"]')");
   });
 });

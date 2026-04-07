@@ -4,6 +4,8 @@ import type { IPage } from '@jackwener/opencli/types';
 import { assertAllowedKinds, parseTarget } from './target.js';
 import { buildResultRow, requireExecute, resolveCurrentUserIdentity, resolvePayload } from './write-shared.js';
 
+const COMMENT_AUTHOR_SCOPE_SELECTOR = '.CommentItemV2-head, .CommentItem-head, .CommentItemV2-meta, .CommentItem-meta, .CommentItemV2-metaSibling, [data-comment-author], [itemprop="author"]';
+
 cli({
   site: 'zhihu',
   name: 'comment',
@@ -220,6 +222,15 @@ cli({
 
     const proof = await page.evaluate(`(async () => {
       const normalize = (value) => value.replace(/\\s+/g, ' ').trim();
+      const commentAuthorScopeSelector = ${JSON.stringify(COMMENT_AUTHOR_SCOPE_SELECTOR)};
+      const readCommentAuthorSlug = (node) => {
+        const authorScopes = Array.from(node.querySelectorAll(commentAuthorScopeSelector));
+        const slugs = Array.from(new Set(authorScopes
+          .flatMap((scope) => Array.from(scope.querySelectorAll('a[href^="/people/"]')))
+          .map((link) => (link.getAttribute('href') || '').match(/^\\/people\\/([A-Za-z0-9_-]+)/)?.[1] || null)
+          .filter(Boolean)));
+        return slugs.length === 1 ? slugs[0] : null;
+      };
       const targetKind = ${JSON.stringify(target.kind)};
       const targetQuestionId = ${JSON.stringify(target.kind === 'answer' ? target.questionId : null)};
       const targetAnswerId = ${JSON.stringify(target.kind === 'answer' ? target.id : null)};
@@ -260,8 +271,7 @@ cli({
 
       if (createdLink) {
         const card = createdLink.closest('[data-comment-id], .CommentItem, li');
-        const authorLink = card?.querySelector('a[href^="/people/"]');
-        const authorSlug = (authorLink?.getAttribute('href') || '').match(/^\\/people\\/([A-Za-z0-9_-]+)/)?.[1] || null;
+        const authorSlug = card ? readCommentAuthorSlug(card) : null;
         const contentNode =
           card?.querySelector('[data-comment-content], .RichContent-inner, .CommentItemV2-content, .CommentContent')
           || card;
@@ -281,12 +291,10 @@ cli({
       const beforeTexts = new Set(${JSON.stringify((beforeSubmitSnapshot.rows ?? []).map((row) => row.text).filter(Boolean))});
       const normalizedPayload = normalize(${JSON.stringify(payload)});
       const after = Array.from(scope.querySelectorAll('[data-comment-id], .CommentItem')).map((node) => {
-        const authorLink = node.querySelector('a[href^="/people/"]');
-        const authorSlug = (authorLink?.getAttribute('href') || '').match(/^\\/people\\/([A-Za-z0-9_-]+)/)?.[1] || null;
         return {
           id: node.getAttribute('data-comment-id') || '',
           text: normalize(node.textContent || ''),
-          authorSlug,
+          authorSlug: readCommentAuthorSlug(node),
           topLevel: !node.closest('ul ul, ol ol, li li') && !node.parentElement?.closest('[data-comment-id], .CommentItem'),
         };
       });
