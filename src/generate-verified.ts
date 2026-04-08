@@ -2,11 +2,18 @@
  * Verified adapter generation:
  * discover → synthesize → candidate-bound probe → single-session verify.
  *
- * v1 keeps the contract narrow on purpose:
+ * v1 contract keeps scope narrow:
  *   - PUBLIC + COOKIE only
  *   - read-only JSON API surfaces
  *   - single best candidate only
  *   - bounded repair: select/itemPath replacement once
+ *
+ * Contract design principles:
+ *   1. machine-readable
+ *   2. explicit + explainable
+ *   3. testable + versioned
+ *   4. taxonomy by skill decision needs (not internal error sources)
+ *   5. early hint / terminal outcome share consistent decision language
  */
 
 import * as fs from 'node:fs';
@@ -22,20 +29,56 @@ import {
   AuthRequiredError,
   BrowserConnectError,
   CommandExecutionError,
+  SelectorError,
   TimeoutError,
   getErrorMessage,
 } from './errors.js';
 import { USER_CLIS_DIR } from './discovery.js';
 import type { IPage } from './types.js';
 
-type SupportedStrategy = Strategy.PUBLIC | Strategy.COOKIE;
-type VerifyFailureReason = 'empty-result' | 'sparse-fields' | 'non-array-result';
+// ── Shared Decision Language ──────────────────────────────────────────────────
+// Used by both early hints (P2) and terminal outcomes (P1).
+// Keeping them unified so skill sees one continuous decision path.
 
-export type BlockReason =
-  | 'no-api-discovered'
-  | 'auth-required'
-  | 'no-viable-candidate'
-  | 'browser-unavailable';
+export type Stage = 'explore' | 'cascade' | 'synthesize' | 'verify' | 'fallback';
+export type Confidence = 'high' | 'medium' | 'low';
+
+// ── Terminal Outcome: blocked ─────────────────────────────────────────────────
+// Taxonomy by skill decision needs: "can I stop?"
+
+export type StopReason =
+  | 'no-viable-api-surface'              // no JSON API endpoints discovered
+  | 'auth-too-complex'                   // requires auth beyond PUBLIC/COOKIE
+  | 'no-viable-candidate'               // candidates exist but none meet quality threshold
+  | 'execution-environment-unavailable'; // browser/daemon not available
+
+// ── Terminal Outcome: needs-human-check ───────────────────────────────────────
+// Taxonomy: "why escalate?" — action-oriented naming per first-principles review.
+
+export type EscalationReason =
+  | 'empty-result'               // pipeline ran but returned nothing
+  | 'sparse-fields'              // result has too few populated fields
+  | 'non-array-result'           // result is not an array
+  | 'unsupported-required-args'  // candidate needs args we can't auto-fill
+  | 'timeout'                    // execution timed out
+  | 'selector-mismatch'         // DOM/JSON path didn't match
+  | 'verify-inconclusive';       // catch-all for ambiguous verify failures
+
+export type SuggestedAction =
+  | 'stop'                       // nothing more to try
+  | 'inspect-with-operate'       // human should use operate skill to debug
+  | 'ask-for-login'              // needs human to log in
+  | 'ask-for-sample-arg'         // needs human to provide a real arg value
+  | 'manual-review';             // general human review needed
+
+export type ReusabilityKind =
+  | 'verified-artifact'          // fully verified, can be used directly
+  | 'candidate-yaml'             // unverified candidate, may need manual fix
+  | 'not-reusable';              // should be regenerated
+
+// ── Outcome Types ─────────────────────────────────────────────────────────────
+
+type SupportedStrategy = Strategy.PUBLIC | Strategy.COOKIE;
 
 export interface GenerateStats {
   endpoint_count: number;
@@ -52,23 +95,41 @@ export interface VerifiedAdapter {
   command: string;
   strategy: SupportedStrategy;
   path: string;
+  metadata_path?: string;
 }
 
-export interface CandidateInfo {
-  site: string;
-  name: string;
-  command: string;
-  strategy: string;
-  path: string;
+export interface EscalationContext {
+  stage: Stage;
+  reason: EscalationReason;
+  confidence: Confidence;
+  suggested_action: SuggestedAction;
+  candidate: {
+    name: string;
+    command: string;
+    path: string | null;
+    reusable: boolean;
+    reusability_reason: ReusabilityKind;
+  };
 }
 
 export type GenerateOutcome = {
   version: 1;
   status: 'success' | 'blocked' | 'needs-human-check';
+
+  // success path
   adapter?: VerifiedAdapter;
-  reason?: BlockReason;
-  candidate?: CandidateInfo;
-  issue?: string;
+
+  // blocked path
+  reason?: StopReason;
+  stage?: Stage;
+  confidence?: Confidence;
+
+  // needs-human-check path
+  escalation?: EscalationContext;
+
+  // human-readable summary (not the primary contract)
+  message?: string;
+
   stats: GenerateStats;
 };
 
@@ -82,6 +143,21 @@ export interface GenerateVerifiedOptions {
   workspace?: string;
   noRegister?: boolean;
 }
+
+// ── Verified Artifact Metadata (sidecar) ──────────────────────────────────────
+
+export interface VerifiedArtifactMetadata {
+  artifact_kind: 'verified';
+  schema_version: 1;
+  source_url: string;
+  goal: string | null;
+  strategy: SupportedStrategy;
+  verified: true;
+  reusable: true;
+  reusability_reason: 'verified-artifact';
+}
+
+// ── Internal Types ────────────────────────────────────────────────────────────
 
 interface ExploreBundleLike {
   manifest: {
@@ -109,10 +185,14 @@ interface CandidateContext {
   endpoint: ExploreBundleLike['endpoints'][number] | null;
 }
 
+type VerifyFailureReason = 'empty-result' | 'sparse-fields' | 'non-array-result';
+
 type VerificationResult =
   | { ok: true }
   | { ok: false; reason: VerifyFailureReason }
-  | { ok: false; terminal: 'blocked' | 'needs-human-check'; reason?: BlockReason; issue: string };
+  | { ok: false; terminal: 'blocked' | 'needs-human-check'; reason?: StopReason; escalationReason?: EscalationReason; issue: string };
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
 
 function parseSupportedStrategy(value: unknown): SupportedStrategy | null {
   return value === Strategy.PUBLIC || value === Strategy.COOKIE ? value : null;
@@ -137,16 +217,6 @@ function buildStats(args: {
     verified: args.verified ?? false,
     repair_attempted: args.repairAttempted ?? false,
     explore_dir: args.exploreDir,
-  };
-}
-
-function buildCandidateInfo(site: string, summary: SynthesizeCandidateSummary): CandidateInfo {
-  return {
-    site,
-    name: summary.name,
-    command: commandName(site, summary.name),
-    strategy: summary.strategy,
-    path: summary.path,
   };
 }
 
@@ -295,6 +365,48 @@ function applyStrategy(candidate: CandidateYaml, strategy: SupportedStrategy): C
   return next;
 }
 
+// ── Escalation builders ───────────────────────────────────────────────────────
+
+function mapVerifyFailureToEscalation(reason: VerifyFailureReason): EscalationReason {
+  return reason; // VerifyFailureReason is a subset of EscalationReason
+}
+
+function suggestAction(reason: EscalationReason): SuggestedAction {
+  switch (reason) {
+    case 'unsupported-required-args': return 'ask-for-sample-arg';
+    case 'timeout': return 'inspect-with-operate';
+    case 'selector-mismatch': return 'inspect-with-operate';
+    case 'empty-result': return 'inspect-with-operate';
+    case 'sparse-fields': return 'inspect-with-operate';
+    case 'non-array-result': return 'inspect-with-operate';
+    case 'verify-inconclusive': return 'manual-review';
+  }
+}
+
+function buildEscalation(
+  stage: Stage,
+  reason: EscalationReason,
+  summary: SynthesizeCandidateSummary,
+  site: string,
+  opts?: { reusable?: boolean; reusabilityReason?: ReusabilityKind; confidence?: Confidence },
+): EscalationContext {
+  return {
+    stage,
+    reason,
+    confidence: opts?.confidence ?? 'medium',
+    suggested_action: suggestAction(reason),
+    candidate: {
+      name: summary.name,
+      command: commandName(site, summary.name),
+      path: summary.path ?? null,
+      reusable: opts?.reusable ?? false,
+      reusability_reason: opts?.reusabilityReason ?? 'candidate-yaml',
+    },
+  };
+}
+
+// ── Verification ──────────────────────────────────────────────────────────────
+
 async function verifyCandidate(
   page: IPage,
   candidate: CandidateYaml,
@@ -307,18 +419,21 @@ async function verifyCandidate(
     return assessResult(result, expectedFields);
   } catch (error) {
     if (error instanceof BrowserConnectError) {
-      return { ok: false, terminal: 'blocked', reason: 'browser-unavailable', issue: getErrorMessage(error) };
+      return { ok: false, terminal: 'blocked', reason: 'execution-environment-unavailable', issue: getErrorMessage(error) };
     }
     if (error instanceof AuthRequiredError) {
-      return { ok: false, terminal: 'blocked', reason: 'auth-required', issue: getErrorMessage(error) };
+      return { ok: false, terminal: 'blocked', reason: 'auth-too-complex', issue: getErrorMessage(error) };
+    }
+    if (error instanceof SelectorError) {
+      return { ok: false, terminal: 'needs-human-check', escalationReason: 'selector-mismatch', issue: getErrorMessage(error) };
     }
     if (error instanceof TimeoutError) {
-      return { ok: false, terminal: 'needs-human-check', issue: getErrorMessage(error) };
+      return { ok: false, terminal: 'needs-human-check', escalationReason: 'timeout', issue: getErrorMessage(error) };
     }
     if (error instanceof CommandExecutionError) {
-      return { ok: false, terminal: 'needs-human-check', issue: getErrorMessage(error) };
+      return { ok: false, terminal: 'needs-human-check', escalationReason: 'verify-inconclusive', issue: getErrorMessage(error) };
     }
-    return { ok: false, terminal: 'needs-human-check', issue: getErrorMessage(error) };
+    return { ok: false, terminal: 'needs-human-check', escalationReason: 'verify-inconclusive', issue: getErrorMessage(error) };
   }
 }
 
@@ -329,22 +444,30 @@ async function probeCandidateStrategy(page: IPage, endpointUrl: string): Promise
   return parseSupportedStrategy(success?.strategy);
 }
 
-async function registerVerifiedAdapter(candidate: CandidateYaml): Promise<string> {
+// ── Artifact persistence ──────────────────────────────────────────────────────
+
+async function registerVerifiedAdapter(candidate: CandidateYaml, metadata: VerifiedArtifactMetadata): Promise<{ yamlPath: string; metadataPath: string }> {
   const siteDir = path.join(USER_CLIS_DIR, candidate.site);
-  const filePath = path.join(siteDir, `${candidate.name}.yaml`);
+  const yamlPath = path.join(siteDir, `${candidate.name}.yaml`);
+  const metadataPath = path.join(siteDir, `${candidate.name}.meta.json`);
   await fs.promises.mkdir(siteDir, { recursive: true });
-  await fs.promises.writeFile(filePath, yaml.dump(candidate, { sortKeys: false, lineWidth: 120 }));
-  registerCommand(candidateToCommand(candidate, filePath));
-  return filePath;
+  await fs.promises.writeFile(yamlPath, yaml.dump(candidate, { sortKeys: false, lineWidth: 120 }));
+  await fs.promises.writeFile(metadataPath, JSON.stringify(metadata, null, 2));
+  registerCommand(candidateToCommand(candidate, yamlPath));
+  return { yamlPath, metadataPath };
 }
 
-async function writeVerifiedArtifact(candidate: CandidateYaml, exploreDir: string): Promise<string> {
+async function writeVerifiedArtifact(candidate: CandidateYaml, exploreDir: string, metadata: VerifiedArtifactMetadata): Promise<{ yamlPath: string; metadataPath: string }> {
   const outDir = path.join(exploreDir, 'verified');
-  const filePath = path.join(outDir, `${candidate.name}.verified.yaml`);
+  const yamlPath = path.join(outDir, `${candidate.name}.verified.yaml`);
+  const metadataPath = path.join(outDir, `${candidate.name}.verified.meta.json`);
   await fs.promises.mkdir(outDir, { recursive: true });
-  await fs.promises.writeFile(filePath, yaml.dump(candidate, { sortKeys: false, lineWidth: 120 }));
-  return filePath;
+  await fs.promises.writeFile(yamlPath, yaml.dump(candidate, { sortKeys: false, lineWidth: 120 }));
+  await fs.promises.writeFile(metadataPath, JSON.stringify(metadata, null, 2));
+  return { yamlPath, metadataPath };
 }
+
+// ── Session error classification ──────────────────────────────────────────────
 
 function classifySessionError(
   error: unknown,
@@ -353,19 +476,41 @@ function classifySessionError(
   site: string,
 ): GenerateOutcome {
   if (error instanceof BrowserConnectError) {
-    return { version: 1, status: 'blocked', reason: 'browser-unavailable', stats };
+    return {
+      version: 1,
+      status: 'blocked',
+      reason: 'execution-environment-unavailable',
+      stage: 'verify',
+      confidence: 'high',
+      message: getErrorMessage(error),
+      stats,
+    };
   }
   if (error instanceof AuthRequiredError) {
-    return { version: 1, status: 'blocked', reason: 'auth-required', stats };
+    return {
+      version: 1,
+      status: 'blocked',
+      reason: 'auth-too-complex',
+      stage: 'verify',
+      confidence: 'high',
+      message: getErrorMessage(error),
+      stats,
+    };
   }
   return {
     version: 1,
     status: 'needs-human-check',
-    candidate: buildCandidateInfo(site, summary),
-    issue: getErrorMessage(error),
+    escalation: buildEscalation('verify', 'verify-inconclusive', summary, site, {
+      reusable: false,
+      reusabilityReason: 'candidate-yaml',
+      confidence: 'low',
+    }),
+    message: getErrorMessage(error),
     stats,
   };
 }
+
+// ── Main orchestrator ─────────────────────────────────────────────────────────
 
 export async function generateVerifiedFromUrl(opts: GenerateVerifiedOptions): Promise<GenerateOutcome> {
   const normalizedGoal = normalizeGoal(opts.goal) ?? opts.goal ?? undefined;
@@ -388,12 +533,30 @@ export async function generateVerifiedFromUrl(opts: GenerateVerifiedOptions): Pr
     exploreDir: exploreResult.out_dir,
   });
 
+  // ── Early blocked: no API surface ───────────────────────────────────────
   if (exploreResult.api_endpoint_count === 0) {
-    return { version: 1, status: 'blocked', reason: 'no-api-discovered', stats: baseStats };
+    return {
+      version: 1,
+      status: 'blocked',
+      reason: 'no-viable-api-surface',
+      stage: 'explore',
+      confidence: 'high',
+      message: 'No JSON API endpoints discovered on this site.',
+      stats: baseStats,
+    };
   }
 
+  // ── Early blocked: no candidate ─────────────────────────────────────────
   if (!selected || synthesizeResult.candidate_count === 0) {
-    return { version: 1, status: 'blocked', reason: 'no-viable-candidate', stats: baseStats };
+    return {
+      version: 1,
+      status: 'blocked',
+      reason: 'no-viable-candidate',
+      stage: 'synthesize',
+      confidence: 'high',
+      message: 'No candidate met the quality threshold for verification.',
+      stats: baseStats,
+    };
   }
 
   const context: CandidateContext = {
@@ -402,52 +565,84 @@ export async function generateVerifiedFromUrl(opts: GenerateVerifiedOptions): Pr
   };
 
   if (!context.endpoint) {
-    return { version: 1, status: 'blocked', reason: 'no-viable-candidate', stats: baseStats };
+    return {
+      version: 1,
+      status: 'blocked',
+      reason: 'no-viable-candidate',
+      stage: 'synthesize',
+      confidence: 'medium',
+      message: 'No endpoint could be matched to the selected candidate.',
+      stats: baseStats,
+    };
   }
 
   const expectedFields = Object.keys(context.endpoint.detectedFields ?? {});
   const originalCandidate = readCandidateYaml(selected.path);
   const unsupportedArgs = getUnsupportedVerificationArgs(originalCandidate);
 
+  // ── Escalation: unsupported required args ───────────────────────────────
   if (unsupportedArgs.length > 0) {
     return {
       version: 1,
       status: 'needs-human-check',
-      candidate: buildCandidateInfo(bundle.manifest.site, selected),
-      issue: `auto-verification does not support required args: ${unsupportedArgs.join(', ')}`,
+      escalation: buildEscalation('synthesize', 'unsupported-required-args', selected, bundle.manifest.site, {
+        reusable: true,
+        reusabilityReason: 'candidate-yaml',
+        confidence: 'high',
+      }),
+      message: `Auto-verification does not support required args: ${unsupportedArgs.join(', ')}`,
       stats: baseStats,
     };
   }
 
+  // ── Phase 3: single browser session (probe + verify + repair) ───────────
   try {
     return await browserSession(opts.BrowserFactory, async (page) => {
       await page.goto(bundle.manifest.final_url ?? bundle.manifest.target_url);
 
+      // ── Probe: candidate-bound strategy ─────────────────────────────────
       const bestStrategy = await probeCandidateStrategy(page, context.endpoint!.url);
       if (!bestStrategy) {
         return {
           version: 1,
           status: 'blocked',
-          reason: 'auth-required',
+          reason: 'auth-too-complex' as StopReason,
+          stage: 'cascade' as Stage,
+          confidence: 'high' as Confidence,
+          message: 'No PUBLIC or COOKIE strategy succeeded for this endpoint.',
           stats: baseStats,
         };
       }
 
       const candidate = applyStrategy(originalCandidate, bestStrategy);
+      const goalStr = normalizedGoal ?? opts.goal ?? null;
+      const buildMetadata = (): VerifiedArtifactMetadata => ({
+        artifact_kind: 'verified',
+        schema_version: 1,
+        source_url: opts.url,
+        goal: goalStr,
+        strategy: bestStrategy,
+        verified: true,
+        reusable: true,
+        reusability_reason: 'verified-artifact',
+      });
+
+      // ── First verify attempt ────────────────────────────────────────────
       const firstAttempt = await verifyCandidate(page, candidate, expectedFields);
       if (firstAttempt.ok) {
-        const finalPath = opts.noRegister
-          ? await writeVerifiedArtifact(candidate, exploreResult.out_dir)
-          : await registerVerifiedAdapter(candidate);
+        const artifact = opts.noRegister
+          ? await writeVerifiedArtifact(candidate, exploreResult.out_dir, buildMetadata())
+          : await registerVerifiedAdapter(candidate, buildMetadata());
         return {
           version: 1,
-          status: 'success',
+          status: 'success' as const,
           adapter: {
             site: candidate.site,
             name: candidate.name,
             command: commandName(candidate.site, candidate.name),
             strategy: bestStrategy,
-            path: finalPath,
+            path: artifact.yamlPath,
+            metadata_path: artifact.metadataPath,
           },
           stats: buildStats({
             endpointCount: exploreResult.endpoint_count,
@@ -460,34 +655,50 @@ export async function generateVerifiedFromUrl(opts: GenerateVerifiedOptions): Pr
         };
       }
 
+      // ── Terminal from first attempt ─────────────────────────────────────
       if ('terminal' in firstAttempt) {
         if (firstAttempt.terminal === 'blocked') {
           return {
             version: 1,
             status: 'blocked',
-            reason: firstAttempt.reason ?? 'browser-unavailable',
+            reason: firstAttempt.reason ?? 'execution-environment-unavailable',
+            stage: 'verify' as Stage,
+            confidence: 'high' as Confidence,
+            message: firstAttempt.issue,
             stats: baseStats,
           };
         }
         return {
           version: 1,
           status: 'needs-human-check',
-          candidate: buildCandidateInfo(bundle.manifest.site, selected),
-          issue: firstAttempt.issue,
+          escalation: buildEscalation(
+            'verify',
+            firstAttempt.escalationReason ?? 'verify-inconclusive',
+            selected,
+            bundle.manifest.site,
+            { reusable: false, reusabilityReason: 'candidate-yaml', confidence: 'medium' },
+          ),
+          message: firstAttempt.issue,
           stats: baseStats,
         };
       }
 
+      // ── Bounded repair: itemPath relocation ─────────────────────────────
       const repaired = firstAttempt.reason === 'empty-result'
         ? withItemPath(candidate, context.endpoint?.itemPath ?? null)
         : null;
 
       if (!repaired) {
+        const escalationReason = mapVerifyFailureToEscalation(firstAttempt.reason);
         return {
           version: 1,
           status: 'needs-human-check',
-          candidate: buildCandidateInfo(bundle.manifest.site, selected),
-          issue: firstAttempt.reason,
+          escalation: buildEscalation('verify', escalationReason, selected, bundle.manifest.site, {
+            reusable: false,
+            reusabilityReason: 'candidate-yaml',
+            confidence: 'medium',
+          }),
+          message: `Verification failed: ${firstAttempt.reason}`,
           stats: buildStats({
             endpointCount: exploreResult.endpoint_count,
             apiEndpointCount: exploreResult.api_endpoint_count,
@@ -498,29 +709,32 @@ export async function generateVerifiedFromUrl(opts: GenerateVerifiedOptions): Pr
         };
       }
 
+      // ── Second verify attempt (after repair) ───────────────────────────
       const secondAttempt = await verifyCandidate(page, repaired, expectedFields);
+      const repairedStats = buildStats({
+        endpointCount: exploreResult.endpoint_count,
+        apiEndpointCount: exploreResult.api_endpoint_count,
+        candidateCount: synthesizeResult.candidate_count,
+        repairAttempted: true,
+        exploreDir: exploreResult.out_dir,
+      });
+
       if (secondAttempt.ok) {
-        const finalPath = opts.noRegister
-          ? await writeVerifiedArtifact(repaired, exploreResult.out_dir)
-          : await registerVerifiedAdapter(repaired);
+        const artifact = opts.noRegister
+          ? await writeVerifiedArtifact(repaired, exploreResult.out_dir, buildMetadata())
+          : await registerVerifiedAdapter(repaired, buildMetadata());
         return {
           version: 1,
-          status: 'success',
+          status: 'success' as const,
           adapter: {
             site: repaired.site,
             name: repaired.name,
             command: commandName(repaired.site, repaired.name),
             strategy: bestStrategy,
-            path: finalPath,
+            path: artifact.yamlPath,
+            metadata_path: artifact.metadataPath,
           },
-          stats: buildStats({
-            endpointCount: exploreResult.endpoint_count,
-            apiEndpointCount: exploreResult.api_endpoint_count,
-            candidateCount: synthesizeResult.candidate_count,
-            verified: true,
-            repairAttempted: true,
-            exploreDir: exploreResult.out_dir,
-          }),
+          stats: { ...repairedStats, verified: true },
         };
       }
 
@@ -529,49 +743,48 @@ export async function generateVerifiedFromUrl(opts: GenerateVerifiedOptions): Pr
           return {
             version: 1,
             status: 'blocked',
-            reason: secondAttempt.reason ?? 'browser-unavailable',
-            stats: buildStats({
-              endpointCount: exploreResult.endpoint_count,
-              apiEndpointCount: exploreResult.api_endpoint_count,
-              candidateCount: synthesizeResult.candidate_count,
-              repairAttempted: true,
-              exploreDir: exploreResult.out_dir,
-            }),
+            reason: secondAttempt.reason ?? 'execution-environment-unavailable',
+            stage: 'fallback' as Stage,
+            confidence: 'high' as Confidence,
+            message: secondAttempt.issue,
+            stats: repairedStats,
           };
         }
         return {
           version: 1,
           status: 'needs-human-check',
-          candidate: buildCandidateInfo(bundle.manifest.site, selected),
-          issue: secondAttempt.issue,
-          stats: buildStats({
-            endpointCount: exploreResult.endpoint_count,
-            apiEndpointCount: exploreResult.api_endpoint_count,
-            candidateCount: synthesizeResult.candidate_count,
-            repairAttempted: true,
-            exploreDir: exploreResult.out_dir,
-          }),
+          escalation: buildEscalation(
+            'fallback',
+            secondAttempt.escalationReason ?? 'verify-inconclusive',
+            selected,
+            bundle.manifest.site,
+            { reusable: false, reusabilityReason: 'candidate-yaml', confidence: 'low' },
+          ),
+          message: secondAttempt.issue,
+          stats: repairedStats,
         };
       }
 
+      // ── Repair exhausted ────────────────────────────────────────────────
+      const escalationReason = mapVerifyFailureToEscalation(secondAttempt.reason);
       return {
         version: 1,
         status: 'needs-human-check',
-        candidate: buildCandidateInfo(bundle.manifest.site, selected),
-        issue: secondAttempt.reason,
-        stats: buildStats({
-          endpointCount: exploreResult.endpoint_count,
-          apiEndpointCount: exploreResult.api_endpoint_count,
-          candidateCount: synthesizeResult.candidate_count,
-          repairAttempted: true,
-          exploreDir: exploreResult.out_dir,
+        escalation: buildEscalation('fallback', escalationReason, selected, bundle.manifest.site, {
+          reusable: false,
+          reusabilityReason: 'candidate-yaml',
+          confidence: 'low',
         }),
+        message: `Repair exhausted: ${secondAttempt.reason}`,
+        stats: repairedStats,
       };
     }, { workspace: opts.workspace });
   } catch (error) {
     return classifySessionError(error, selected, baseStats, bundle.manifest.site);
   }
 }
+
+// ── Render ────────────────────────────────────────────────────────────────────
 
 export function renderGenerateVerifiedSummary(result: GenerateOutcome): string {
   const lines = [
@@ -583,11 +796,18 @@ export function renderGenerateVerifiedSummary(result: GenerateOutcome): string {
     lines.push(`Command: ${result.adapter.command}`);
     lines.push(`Strategy: ${result.adapter.strategy}`);
     lines.push(`Path: ${result.adapter.path}`);
-  } else if (result.status === 'blocked' && result.reason) {
+  } else if (result.status === 'blocked') {
     lines.push(`Reason: ${result.reason}`);
-  } else if (result.status === 'needs-human-check' && result.candidate) {
-    lines.push(`Candidate: ${result.candidate.command}`);
-    if (result.issue) lines.push(`Issue: ${result.issue}`);
+    lines.push(`Stage: ${result.stage}`);
+    lines.push(`Confidence: ${result.confidence}`);
+    if (result.message) lines.push(`Message: ${result.message}`);
+  } else if (result.status === 'needs-human-check' && result.escalation) {
+    lines.push(`Stage: ${result.escalation.stage}`);
+    lines.push(`Reason: ${result.escalation.reason}`);
+    lines.push(`Suggested action: ${result.escalation.suggested_action}`);
+    lines.push(`Candidate: ${result.escalation.candidate.command}`);
+    lines.push(`Reusable: ${result.escalation.candidate.reusable} (${result.escalation.candidate.reusability_reason})`);
+    if (result.message) lines.push(`Message: ${result.message}`);
   }
 
   lines.push('');

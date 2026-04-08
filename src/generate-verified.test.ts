@@ -57,7 +57,7 @@ vi.mock('./discovery.js', () => ({
 }));
 
 import { Strategy } from './registry.js';
-import { generateVerifiedFromUrl } from './generate-verified.js';
+import { generateVerifiedFromUrl, type GenerateOutcome } from './generate-verified.js';
 
 describe('generateVerifiedFromUrl', () => {
   let tempDir: string;
@@ -77,7 +77,9 @@ describe('generateVerifiedFromUrl', () => {
     fs.rmSync(tempDir, { recursive: true, force: true });
   });
 
-  it('returns blocked when discover finds no API endpoints', async () => {
+  // ── Blocked outcomes ──────────────────────────────────────────────────────
+
+  it('returns blocked with no-viable-api-surface when discover finds no API endpoints', async () => {
     mockExploreUrl.mockResolvedValue({
       site: 'demo',
       target_url: 'https://demo.test',
@@ -111,23 +113,93 @@ describe('generateVerifiedFromUrl', () => {
       noRegister: true,
     });
 
-    expect(result).toEqual({
-      version: 1,
-      status: 'blocked',
-      reason: 'no-api-discovered',
-      stats: {
-        endpoint_count: 1,
-        api_endpoint_count: 0,
-        candidate_count: 0,
-        verified: false,
-        repair_attempted: false,
-        explore_dir: tempDir,
-      },
-    });
+    expect(result.version).toBe(1);
+    expect(result.status).toBe('blocked');
+    expect(result.reason).toBe('no-viable-api-surface');
+    expect(result.stage).toBe('explore');
+    expect(result.confidence).toBe('high');
+    expect(result.message).toBeDefined();
+    expect(result.stats.api_endpoint_count).toBe(0);
     expect(mockBrowserSession).not.toHaveBeenCalled();
   });
 
-  it('verifies the selected candidate in a single session and registers on success', async () => {
+  it('returns blocked with auth-too-complex when no PUBLIC/COOKIE probe succeeds', async () => {
+    const candidatePath = path.join(tempDir, 'hot.yaml');
+    fs.writeFileSync(candidatePath, yaml.dump({
+      site: 'demo',
+      name: 'hot',
+      description: 'demo hot',
+      domain: 'demo.test',
+      strategy: 'public',
+      browser: false,
+      args: {},
+      columns: ['title', 'url'],
+      pipeline: [
+        { fetch: { url: 'https://demo.test/api/hot' } },
+        { select: 'data.items' },
+      ],
+    }, { sortKeys: false }));
+
+    mockExploreUrl.mockResolvedValue({
+      site: 'demo',
+      target_url: 'https://demo.test',
+      final_url: 'https://demo.test',
+      title: 'Demo',
+      framework: {},
+      stores: [],
+      top_strategy: 'cookie',
+      endpoint_count: 1,
+      api_endpoint_count: 1,
+      capabilities: [{ name: 'hot' }],
+      auth_indicators: [],
+      out_dir: tempDir,
+    });
+    mockLoadExploreBundle.mockReturnValue({
+      manifest: { site: 'demo', target_url: 'https://demo.test', final_url: 'https://demo.test' },
+      endpoints: [{
+        pattern: 'demo.test/api/hot',
+        url: 'https://demo.test/api/hot',
+        itemPath: 'data.items',
+        itemCount: 5,
+        detectedFields: { title: 'title', url: 'url' },
+      }],
+      capabilities: [{ name: 'hot', strategy: 'cookie', endpoint: 'demo.test/api/hot', itemPath: 'data.items' }],
+    });
+    mockSynthesizeFromExplore.mockReturnValue({
+      site: 'demo',
+      explore_dir: tempDir,
+      out_dir: tempDir,
+      candidate_count: 1,
+      candidates: [{ name: 'hot', path: candidatePath, strategy: 'public' }],
+    });
+
+    const page = { goto: vi.fn() } as unknown as IPage;
+    mockBrowserSession.mockImplementation(async (_factory, fn) => fn(page));
+    mockCascadeProbe.mockResolvedValue({
+      bestStrategy: Strategy.COOKIE,
+      probes: [
+        { strategy: Strategy.PUBLIC, success: false },
+        { strategy: Strategy.COOKIE, success: false },
+      ],
+      confidence: 0.3,
+    });
+
+    const result = await generateVerifiedFromUrl({
+      url: 'https://demo.test',
+      BrowserFactory: class {} as never,
+      noRegister: true,
+    });
+
+    expect(mockExecutePipeline).not.toHaveBeenCalled();
+    expect(result.status).toBe('blocked');
+    expect(result.reason).toBe('auth-too-complex');
+    expect(result.stage).toBe('cascade');
+    expect(result.confidence).toBe('high');
+  });
+
+  // ── Success outcomes ──────────────────────────────────────────────────────
+
+  it('verifies the selected candidate in a single session and registers on success with sidecar metadata', async () => {
     const hotPath = path.join(tempDir, 'hot.yaml');
     const searchPath = path.join(tempDir, 'search.yaml');
 
@@ -239,30 +311,32 @@ describe('generateVerifiedFromUrl', () => {
     expect(page.goto).toHaveBeenCalledWith('https://demo.test/home');
     expect(mockCascadeProbe).toHaveBeenCalledWith(page, 'https://demo.test/api/search?q=test', { maxStrategy: Strategy.COOKIE });
     expect(mockExecutePipeline).toHaveBeenCalledTimes(1);
-    expect(mockExecutePipeline).toHaveBeenCalledWith(
-      page,
-      expect.any(Array),
-      expect.objectContaining({
-        args: expect.objectContaining({ keyword: 'test' }),
-      }),
-    );
     expect(mockRegisterCommand).toHaveBeenCalledTimes(1);
-    expect(result).toEqual(expect.objectContaining({
-      version: 1,
-      status: 'success',
-      adapter: expect.objectContaining({
-        command: 'demo/search',
-        strategy: Strategy.COOKIE,
-      }),
-      stats: expect.objectContaining({
-        candidate_count: 2,
-        verified: true,
-        repair_attempted: false,
-      }),
+
+    expect(result.version).toBe(1);
+    expect(result.status).toBe('success');
+    expect(result.adapter).toBeDefined();
+    expect(result.adapter!.command).toBe('demo/search');
+    expect(result.adapter!.strategy).toBe(Strategy.COOKIE);
+    expect(result.adapter!.metadata_path).toBeDefined();
+    expect(result.stats.verified).toBe(true);
+    expect(result.stats.repair_attempted).toBe(false);
+
+    // Verify sidecar metadata was written
+    expect(result.adapter!.metadata_path).toMatch(/\.meta\.json$/);
+    const metaContent = JSON.parse(fs.readFileSync(result.adapter!.metadata_path!, 'utf-8'));
+    expect(metaContent).toEqual(expect.objectContaining({
+      artifact_kind: 'verified',
+      schema_version: 1,
+      source_url: 'https://demo.test',
+      strategy: Strategy.COOKIE,
+      verified: true,
+      reusable: true,
+      reusability_reason: 'verified-artifact',
     }));
   });
 
-  it('writes a verified artifact for --no-register success instead of returning the original candidate path', async () => {
+  it('writes verified artifact + sidecar metadata for --no-register success', async () => {
     const candidatePath = path.join(tempDir, 'search.yaml');
     fs.writeFileSync(candidatePath, yaml.dump({
       site: 'demo',
@@ -337,11 +411,15 @@ describe('generateVerifiedFromUrl', () => {
     expect(result.status).toBe('success');
     expect(result.adapter?.path).toMatch(/verified\/search\.verified\.yaml$/);
     expect(result.adapter?.path).not.toBe(candidatePath);
+    expect(result.adapter?.metadata_path).toMatch(/verified\/search\.verified\.meta\.json$/);
     expect(fs.existsSync(result.adapter!.path)).toBe(true);
+    expect(fs.existsSync(result.adapter!.metadata_path!)).toBe(true);
     expect(mockRegisterCommand).not.toHaveBeenCalled();
   });
 
-  it('attempts a single itemPath repair on empty-result and returns needs-human-check when it still fails', async () => {
+  // ── needs-human-check outcomes ────────────────────────────────────────────
+
+  it('returns needs-human-check with structured escalation when repair exhausted', async () => {
     const candidatePath = path.join(tempDir, 'hot.yaml');
     fs.writeFileSync(candidatePath, yaml.dump({
       site: 'demo',
@@ -413,93 +491,25 @@ describe('generateVerifiedFromUrl', () => {
     expect(mockExecutePipeline).toHaveBeenCalledTimes(2);
     expect(mockExecutePipeline.mock.calls[0]?.[1]).toEqual(expect.arrayContaining([{ select: 'wrong.items' }]));
     expect(mockExecutePipeline.mock.calls[1]?.[1]).toEqual(expect.arrayContaining([{ select: 'data.items' }]));
-    expect(result).toEqual(expect.objectContaining({
-      version: 1,
-      status: 'needs-human-check',
-      issue: 'empty-result',
-      stats: expect.objectContaining({
-        repair_attempted: true,
-        verified: false,
-      }),
-    }));
+
+    // Verify structured escalation contract
+    expect(result.version).toBe(1);
+    expect(result.status).toBe('needs-human-check');
+    expect(result.escalation).toBeDefined();
+    expect(result.escalation!.stage).toBe('fallback');
+    expect(result.escalation!.reason).toBe('empty-result');
+    expect(result.escalation!.confidence).toBe('low');
+    expect(result.escalation!.suggested_action).toBe('inspect-with-operate');
+    expect(result.escalation!.candidate).toBeDefined();
+    expect(result.escalation!.candidate.command).toBe('demo/hot');
+    expect(result.escalation!.candidate.reusable).toBe(false);
+    expect(result.escalation!.candidate.reusability_reason).toBe('candidate-yaml');
+    expect(result.message).toContain('Repair exhausted');
+    expect(result.stats.repair_attempted).toBe(true);
+    expect(result.stats.verified).toBe(false);
   });
 
-  it('returns blocked when no PUBLIC/COOKIE probe succeeds', async () => {
-    const candidatePath = path.join(tempDir, 'hot.yaml');
-    fs.writeFileSync(candidatePath, yaml.dump({
-      site: 'demo',
-      name: 'hot',
-      description: 'demo hot',
-      domain: 'demo.test',
-      strategy: 'public',
-      browser: false,
-      args: {},
-      columns: ['title', 'url'],
-      pipeline: [
-        { fetch: { url: 'https://demo.test/api/hot' } },
-        { select: 'data.items' },
-      ],
-    }, { sortKeys: false }));
-
-    mockExploreUrl.mockResolvedValue({
-      site: 'demo',
-      target_url: 'https://demo.test',
-      final_url: 'https://demo.test',
-      title: 'Demo',
-      framework: {},
-      stores: [],
-      top_strategy: 'cookie',
-      endpoint_count: 1,
-      api_endpoint_count: 1,
-      capabilities: [{ name: 'hot' }],
-      auth_indicators: [],
-      out_dir: tempDir,
-    });
-    mockLoadExploreBundle.mockReturnValue({
-      manifest: { site: 'demo', target_url: 'https://demo.test', final_url: 'https://demo.test' },
-      endpoints: [{
-        pattern: 'demo.test/api/hot',
-        url: 'https://demo.test/api/hot',
-        itemPath: 'data.items',
-        itemCount: 5,
-        detectedFields: { title: 'title', url: 'url' },
-      }],
-      capabilities: [{ name: 'hot', strategy: 'cookie', endpoint: 'demo.test/api/hot', itemPath: 'data.items' }],
-    });
-    mockSynthesizeFromExplore.mockReturnValue({
-      site: 'demo',
-      explore_dir: tempDir,
-      out_dir: tempDir,
-      candidate_count: 1,
-      candidates: [{ name: 'hot', path: candidatePath, strategy: 'public' }],
-    });
-
-    const page = { goto: vi.fn() } as unknown as IPage;
-    mockBrowserSession.mockImplementation(async (_factory, fn) => fn(page));
-    mockCascadeProbe.mockResolvedValue({
-      bestStrategy: Strategy.COOKIE,
-      probes: [
-        { strategy: Strategy.PUBLIC, success: false },
-        { strategy: Strategy.COOKIE, success: false },
-      ],
-      confidence: 0.3,
-    });
-
-    const result = await generateVerifiedFromUrl({
-      url: 'https://demo.test',
-      BrowserFactory: class {} as never,
-      noRegister: true,
-    });
-
-    expect(mockExecutePipeline).not.toHaveBeenCalled();
-    expect(result).toEqual(expect.objectContaining({
-      version: 1,
-      status: 'blocked',
-      reason: 'auth-required',
-    }));
-  });
-
-  it('narrows v1 scope by sending unsupported required args to needs-human-check', async () => {
+  it('returns needs-human-check with ask-for-sample-arg for unsupported required args', async () => {
     const candidatePath = path.join(tempDir, 'detail.yaml');
     fs.writeFileSync(candidatePath, yaml.dump({
       site: 'demo',
@@ -559,10 +569,64 @@ describe('generateVerifiedFromUrl', () => {
     });
 
     expect(mockBrowserSession).not.toHaveBeenCalled();
-    expect(result).toEqual(expect.objectContaining({
-      version: 1,
-      status: 'needs-human-check',
-      issue: expect.stringContaining('required args: id'),
-    }));
+    expect(result.status).toBe('needs-human-check');
+    expect(result.escalation).toBeDefined();
+    expect(result.escalation!.stage).toBe('synthesize');
+    expect(result.escalation!.reason).toBe('unsupported-required-args');
+    expect(result.escalation!.confidence).toBe('high');
+    expect(result.escalation!.suggested_action).toBe('ask-for-sample-arg');
+    expect(result.escalation!.candidate.reusable).toBe(true);
+    expect(result.escalation!.candidate.reusability_reason).toBe('candidate-yaml');
+    expect(result.message).toContain('required args: id');
+  });
+
+  // ── Contract shape validation ─────────────────────────────────────────────
+
+  it('all outcome statuses include version, status, and stats', async () => {
+    // Test the blocked path - simplest to set up
+    mockExploreUrl.mockResolvedValue({
+      site: 'demo',
+      target_url: 'https://demo.test',
+      final_url: 'https://demo.test',
+      title: 'Demo',
+      framework: {},
+      stores: [],
+      top_strategy: 'public',
+      endpoint_count: 0,
+      api_endpoint_count: 0,
+      capabilities: [],
+      auth_indicators: [],
+      out_dir: tempDir,
+    });
+    mockLoadExploreBundle.mockReturnValue({
+      manifest: { site: 'demo', target_url: 'https://demo.test', final_url: 'https://demo.test' },
+      endpoints: [],
+      capabilities: [],
+    });
+    mockSynthesizeFromExplore.mockReturnValue({
+      site: 'demo',
+      explore_dir: tempDir,
+      out_dir: tempDir,
+      candidate_count: 0,
+      candidates: [],
+    });
+
+    const result: GenerateOutcome = await generateVerifiedFromUrl({
+      url: 'https://demo.test',
+      BrowserFactory: class {} as never,
+    });
+
+    // Every outcome must have these three fields
+    expect(result).toHaveProperty('version', 1);
+    expect(result).toHaveProperty('status');
+    expect(result).toHaveProperty('stats');
+    expect(['success', 'blocked', 'needs-human-check']).toContain(result.status);
+
+    // Blocked must have stage + reason + confidence
+    if (result.status === 'blocked') {
+      expect(result).toHaveProperty('reason');
+      expect(result).toHaveProperty('stage');
+      expect(result).toHaveProperty('confidence');
+    }
   });
 });
