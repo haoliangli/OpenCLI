@@ -15,7 +15,7 @@ describe('mapOutcomeToSkillOutput', () => {
 
   it('maps success outcome correctly', () => {
     const outcome: GenerateOutcome = {
-      version: 2,
+      version: 1,
       status: 'success',
       adapter: {
         site: 'demo',
@@ -44,7 +44,7 @@ describe('mapOutcomeToSkillOutput', () => {
 
   it('maps blocked outcome with no-viable-api-surface', () => {
     const outcome: GenerateOutcome = {
-      version: 2,
+      version: 1,
       status: 'blocked',
       reason: 'no-viable-api-surface',
       stage: 'explore',
@@ -64,7 +64,7 @@ describe('mapOutcomeToSkillOutput', () => {
 
   it('maps blocked outcome with auth-too-complex', () => {
     const outcome: GenerateOutcome = {
-      version: 2,
+      version: 1,
       status: 'blocked',
       reason: 'auth-too-complex',
       stage: 'cascade',
@@ -81,7 +81,7 @@ describe('mapOutcomeToSkillOutput', () => {
 
   it('maps blocked outcome with execution-environment-unavailable', () => {
     const outcome: GenerateOutcome = {
-      version: 2,
+      version: 1,
       status: 'blocked',
       reason: 'execution-environment-unavailable',
       stage: 'verify',
@@ -98,7 +98,7 @@ describe('mapOutcomeToSkillOutput', () => {
 
   it('maps needs-human-check with unsupported-required-args', () => {
     const outcome: GenerateOutcome = {
-      version: 2,
+      version: 1,
       status: 'needs-human-check',
       escalation: {
         stage: 'synthesize',
@@ -129,7 +129,7 @@ describe('mapOutcomeToSkillOutput', () => {
 
   it('maps needs-human-check with empty-result (inspect-with-browser)', () => {
     const outcome: GenerateOutcome = {
-      version: 2,
+      version: 1,
       status: 'needs-human-check',
       escalation: {
         stage: 'fallback',
@@ -158,7 +158,7 @@ describe('mapOutcomeToSkillOutput', () => {
 
   it('maps needs-human-check with verify-inconclusive and path', () => {
     const outcome: GenerateOutcome = {
-      version: 2,
+      version: 1,
       status: 'needs-human-check',
       escalation: {
         stage: 'verify',
@@ -187,7 +187,7 @@ describe('mapOutcomeToSkillOutput', () => {
 
   it('output satisfies SkillOutput contract shape', () => {
     const outcome: GenerateOutcome = {
-      version: 2,
+      version: 1,
       status: 'blocked',
       reason: 'no-viable-candidate',
       stage: 'synthesize',

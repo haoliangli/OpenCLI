@@ -104,7 +104,6 @@ export interface EarlyHint {
 }
 
 export type EarlyHintHandler = (hint: EarlyHint) => void;
-
 export const GENERATE_OUTCOME_VERSION = 1 as const;
 
 // ── Outcome Types ─────────────────────────────────────────────────────────────

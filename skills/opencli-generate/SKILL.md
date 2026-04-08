@@ -170,10 +170,10 @@ Receive GenerateOutcome
 ### P2: Early-Hint Contract (`EarlyHint`)
 - Lives **inside the orchestrator**, transparent to skill
 - Drives early exit (cost optimization) before verify stage
-- Skill does not consume `EarlyHint` directly in v2
+- Skill does not consume `EarlyHint` directly in v1
 - May be exposed as optional progress channel in future versions
 
-### v2 Scope
+### v1 Scope
 - JSON API + PUBLIC/COOKIE auth + structured array result + read-only list-like capabilities
 - Single browser session lifecycle (probe + verify share one session)
 - Bounded repair: only itemPath relocation, one attempt
