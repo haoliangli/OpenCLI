@@ -10,7 +10,7 @@
 
 A CLI tool that turns **any website**, **Electron app**, or **local CLI tool** into a command-line interface — Bilibili, Zhihu, 小红书, Twitter/X, Reddit, YouTube, Antigravity, `gh`, `docker`, and [many more](#built-in-commands) — powered by browser session reuse and AI-native discovery.
 
-**Built for AI Agents** — Load the [`opencli-operate` skill](./skills/opencli-operate/SKILL.md) to give any AI agent (Claude Code, Cursor) direct browser control. Operate any website, then crystallize those interactions into reusable CLI commands. Configure `opencli list` in your `AGENT.md` or `.cursorrules` so the AI auto-discovers all available tools.
+**Built for AI Agents** — Load the [`opencli-browser` skill](./skills/opencli-browser/SKILL.md) to give any AI agent (Claude Code, Cursor) direct browser control. Control any website, then crystallize those interactions into reusable CLI commands. Configure `opencli list` in your `AGENT.md` or `.cursorrules` so the AI auto-discovers all available tools.
 
 **CLI Hub** — Register any local CLI (`opencli register mycli`) so AI agents can discover and call it alongside built-in commands. Auto-installs missing tools via your package manager (e.g. if `gh` isn't installed, `opencli gh ...` runs `brew install gh` first then re-executes seamlessly).
 
@@ -21,11 +21,11 @@ A CLI tool that turns **any website**, **Electron app**, or **local CLI tool** i
 ## Highlights
 
 - **CLI All Electron** — CLI-ify apps like Antigravity Ultra! Now AI can control itself natively.
-- **Browser Automation** — `operate` gives AI agents direct browser control: click, type, extract, screenshot — any interaction, fully scriptable.
+- **Browser Automation** — `browser` gives AI agents direct browser control: click, type, extract, screenshot — any interaction, fully scriptable.
 - **Website → CLI** — Turn any website into a deterministic CLI: 70+ pre-built adapters, or crystallize your own with `opencli record`.
 - **Account-safe** — Reuses Chrome/Chromium logged-in state; your credentials never leave the browser.
 - **Anti-detection built-in** — Patches `navigator.webdriver`, stubs `window.chrome`, fakes plugin lists, cleans ChromeDriver/Playwright globals, and strips CDP frames from Error stack traces. Extensive anti-fingerprinting and risk-control evasion measures baked in at every layer.
-- **AI Agent ready** — `explore` discovers APIs, `synthesize` generates adapters, `cascade` finds auth strategies, `operate` controls the browser directly.
+- **AI Agent ready** — `explore` discovers APIs, `synthesize` generates adapters, `cascade` finds auth strategies, `browser` controls the browser directly.
 - **External CLI Hub** — Discover, auto-install, and passthrough commands to any external CLI (gh, obsidian, docker, etc). Zero setup.
 - **Self-healing setup** — `opencli doctor` diagnoses and auto-starts the daemon, extension, and live browser connectivity.
 - **Dynamic Loader** — Simply drop `.ts` or `.yaml` adapters into the `clis/` folder for auto-registration.
@@ -73,7 +73,7 @@ opencli bilibili hot --limit 5         # Browser command (requires Extension)
 
 ### 4. Browser Automation — Make Websites Accessible for AI Agents
 
-Point your AI agent (Claude Code, Cursor) to [`skills/opencli-operate/SKILL.md`](./skills/opencli-operate/SKILL.md). It has everything needed — full command reference, examples, and workflow.
+Point your AI agent (Claude Code, Cursor) to [`skills/opencli-browser/SKILL.md`](./skills/opencli-browser/SKILL.md). It has everything needed — full command reference, examples, and workflow.
 
 Available commands: `open`, `state`, `click`, `type`, `select`, `keys`, `wait`, `get`, `screenshot`, `scroll`, `back`, `eval`, `network`, `init`, `verify`, `close`.
 
@@ -93,7 +93,7 @@ npx skills add jackwener/opencli
 
 # Or install specific skills
 npx skills add jackwener/opencli --skill opencli-usage      # Command reference
-npx skills add jackwener/opencli --skill opencli-operate     # Browser automation for AI agents
+npx skills add jackwener/opencli --skill opencli-browser     # Browser automation for AI agents
 npx skills add jackwener/opencli --skill opencli-explorer    # Adapter development guide
 npx skills add jackwener/opencli --skill opencli-oneshot     # Quick command reference
 ```

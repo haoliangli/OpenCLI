@@ -1,14 +1,14 @@
 /**
- * Preset: Operate Command Reliability
+ * Preset: Browser Command Reliability
  *
- * Optimizes opencli operate commands against the Layer 1 deterministic test suite.
+ * Optimizes opencli browser commands against the Layer 1 deterministic test suite.
  * Metric: number of passing browse-tasks (out of 59).
  */
 
 import type { AutoResearchConfig } from '../config.js';
 
-export const operateReliability: AutoResearchConfig = {
-  goal: 'Increase operate command pass rate to 59/59 (100%)',
+export const browserReliability: AutoResearchConfig = {
+  goal: 'Increase browser command pass rate to 59/59 (100%)',
   scope: [
     'src/browser/dom-snapshot.ts',
     'src/browser/dom-helpers.ts',

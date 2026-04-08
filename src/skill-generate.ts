@@ -8,7 +8,7 @@
  *   - Input: url + goal? (user intent, not execution strategy)
  *   - Output: machine-readable decision fields + human-readable message
  *   - Single source of truth: P1 GenerateOutcome
- *   - No re-orchestration, no auto-escalation to operate
+ *   - No re-orchestration, no auto-escalation to browser
  */
 
 import {
@@ -51,11 +51,11 @@ const BLOCKED_MESSAGES: Record<StopReason, string> = {
 
 const ESCALATION_MESSAGES: Record<EscalationReason, (ctx?: { args?: string; path?: string }) => string> = {
   'unsupported-required-args': () => '候选需要用户提供必填参数的示例值后重试',
-  'empty-result': () => '候选验证返回空结果，建议用 opencli-operate 检查',
+  'empty-result': () => '候选验证返回空结果，建议用 opencli-browser 检查',
   'sparse-fields': () => '候选验证结果字段不足，建议人工检查',
-  'non-array-result': () => '返回结果不是数组格式，建议用 opencli-operate 检查接口返回结构',
-  'timeout': () => '验证超时，建议用 opencli-operate 手动检查接口响应',
-  'selector-mismatch': () => '数据路径不匹配，建议用 opencli-operate 检查实际返回结构',
+  'non-array-result': () => '返回结果不是数组格式，建议用 opencli-browser 检查接口返回结构',
+  'timeout': () => '验证超时，建议用 opencli-browser 手动检查接口响应',
+  'selector-mismatch': () => '数据路径不匹配，建议用 opencli-browser 检查实际返回结构',
   'verify-inconclusive': (ctx) => ctx?.path
     ? `验证结果不确定，候选已保存在 ${ctx.path}，需要人工审查`
     : '验证结果不确定，需要人工审查',

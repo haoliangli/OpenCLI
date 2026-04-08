@@ -127,7 +127,7 @@ describe('mapOutcomeToSkillOutput', () => {
     expect(result.message).toContain('required args: id');
   });
 
-  it('maps needs-human-check with empty-result (inspect-with-operate)', () => {
+  it('maps needs-human-check with empty-result (inspect-with-browser)', () => {
     const outcome: GenerateOutcome = {
       version: 1,
       status: 'needs-human-check',
@@ -135,7 +135,7 @@ describe('mapOutcomeToSkillOutput', () => {
         stage: 'fallback',
         reason: 'empty-result',
         confidence: 'low',
-        suggested_action: 'inspect-with-operate',
+        suggested_action: 'inspect-with-browser',
         candidate: {
           name: 'hot',
           command: 'demo/hot',
@@ -151,7 +151,7 @@ describe('mapOutcomeToSkillOutput', () => {
 
     expect(result.conclusion).toBe('needs-human-check');
     expect(result.reason).toBe('empty-result');
-    expect(result.suggested_action).toBe('inspect-with-operate');
+    expect(result.suggested_action).toBe('inspect-with-browser');
     expect(result.path).toBeUndefined();
     expect(result.message).toContain('空结果');
   });

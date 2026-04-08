@@ -51,7 +51,7 @@ vi.mock('./runtime.js', () => ({
   browserSession: mockBrowserSession,
 }));
 
-import { createProgram, findPackageRoot, resolveOperateVerifyInvocation } from './cli.js';
+import { createProgram, findPackageRoot, resolveBrowserVerifyInvocation } from './cli.js';
 
 describe('built-in browser commands verbose wiring', () => {
   const consoleLogSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
@@ -143,14 +143,14 @@ describe('built-in browser commands verbose wiring', () => {
   consoleLogSpy.mockClear();
 });
 
-describe('resolveOperateVerifyInvocation', () => {
+describe('resolveBrowserVerifyInvocation', () => {
   it('prefers the built entry declared in package metadata', () => {
     const projectRoot = path.join('repo-root');
     const exists = new Set([
       path.join(projectRoot, 'dist', 'src', 'main.js'),
     ]);
 
-    expect(resolveOperateVerifyInvocation({
+    expect(resolveBrowserVerifyInvocation({
       projectRoot,
       readFile: () => JSON.stringify({ bin: { opencli: 'dist/src/main.js' } }),
       fileExists: (candidate) => exists.has(candidate),
@@ -167,7 +167,7 @@ describe('resolveOperateVerifyInvocation', () => {
       path.join(projectRoot, 'dist', 'src', 'main.js'),
     ]);
 
-    expect(resolveOperateVerifyInvocation({
+    expect(resolveBrowserVerifyInvocation({
       projectRoot,
       readFile: () => { throw new Error('no package json'); },
       fileExists: (candidate) => exists.has(candidate),
@@ -185,7 +185,7 @@ describe('resolveOperateVerifyInvocation', () => {
       path.join(projectRoot, 'node_modules', '.bin', 'tsx.cmd'),
     ]);
 
-    expect(resolveOperateVerifyInvocation({
+    expect(resolveBrowserVerifyInvocation({
       projectRoot,
       platform: 'win32',
       fileExists: (candidate) => exists.has(candidate),
@@ -203,7 +203,7 @@ describe('resolveOperateVerifyInvocation', () => {
       path.join(projectRoot, 'src', 'main.ts'),
     ]);
 
-    expect(resolveOperateVerifyInvocation({
+    expect(resolveBrowserVerifyInvocation({
       projectRoot,
       platform: 'linux',
       fileExists: (candidate) => exists.has(candidate),

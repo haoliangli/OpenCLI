@@ -16,7 +16,7 @@ tags: [opencli, generate, cli, automation, verified, adapter]
 - User wants to add a website to opencli automatically
 - User provides a URL and expects a working CLI command
 
-**Not for**: manual API exploration (use `opencli-explorer`), single-page quick generation (use `opencli-oneshot`), or browser-based debugging (use `opencli-operate`).
+**Not for**: manual API exploration (use `opencli-explorer`), single-page quick generation (use `opencli-oneshot`), or browser-based debugging (use `opencli-browser`).
 
 ---
 
@@ -80,7 +80,7 @@ interface SkillOutput {
 
 **SuggestedAction** (what to do next):
 - `stop` — nothing more to try
-- `inspect-with-operate` — use opencli-operate skill to debug
+- `inspect-with-browser` — use opencli-browser skill to debug
 - `ask-for-login` — user needs to log in first
 - `ask-for-sample-arg` — user needs to provide a real argument value
 - `manual-review` — general human review needed
@@ -138,11 +138,11 @@ Receive GenerateOutcome
 | `blocked` | `no-viable-candidate` | "发现了 API 接口，但未能合成有效的 CLI 候选" |
 | `blocked` | `execution-environment-unavailable` | "浏览器未连接，请先运行 opencli doctor 检查环境" |
 | `needs-human-check` | `unsupported-required-args` | "候选需要参数 {args}，请提供示例值后重试" |
-| `needs-human-check` | `empty-result` | "候选验证返回空结果，建议用 opencli-operate 检查" |
+| `needs-human-check` | `empty-result` | "候选验证返回空结果，建议用 opencli-browser 检查" |
 | `needs-human-check` | `sparse-fields` | "候选验证结果字段不足，建议人工检查" |
-| `needs-human-check` | `non-array-result` | "返回结果不是数组格式，建议用 opencli-operate 检查接口返回结构" |
-| `needs-human-check` | `timeout` | "验证超时，建议用 opencli-operate 手动检查接口响应" |
-| `needs-human-check` | `selector-mismatch` | "数据路径不匹配，建议用 opencli-operate 检查实际返回结构" |
+| `needs-human-check` | `non-array-result` | "返回结果不是数组格式，建议用 opencli-browser 检查接口返回结构" |
+| `needs-human-check` | `timeout` | "验证超时，建议用 opencli-browser 手动检查接口响应" |
+| `needs-human-check` | `selector-mismatch` | "数据路径不匹配，建议用 opencli-browser 检查实际返回结构" |
 | `needs-human-check` | `verify-inconclusive` | "验证结果不确定，候选已保存在 {path}，需要人工审查" |
 
 ---
@@ -151,7 +151,7 @@ Receive GenerateOutcome
 
 1. **Skill does not orchestrate internal pipeline stages.** It does not decide whether to explore, synthesize, cascade, or verify. That is the code layer's job.
 
-2. **Skill does not auto-escalate to operate.** When `needs-human-check`, skill reports the recommendation but does not automatically invoke `opencli-operate`. The upper-level agent decides.
+2. **Skill does not auto-escalate to browser.** When `needs-human-check`, skill reports the recommendation but does not automatically invoke `opencli-browser`. The upper-level agent decides.
 
 3. **No new taxonomy.** All `reason`, `suggested_action`, `reusability` values are shared with the code layer (`GenerateOutcome`). Skill does not invent new status words.
 

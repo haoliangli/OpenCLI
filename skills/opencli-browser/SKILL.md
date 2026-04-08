@@ -1,10 +1,10 @@
 ---
-name: opencli-operate
+name: opencli-browser
 description: Make websites accessible for AI agents. Navigate, click, type, extract, wait — using Chrome with existing login sessions. No LLM API key needed.
 allowed-tools: Bash(opencli:*), Read, Edit, Write
 ---
 
-# OpenCLI Operate — Browser Automation for AI Agents
+# OpenCLI Browser — Browser Automation for AI Agents
 
 Control Chrome step-by-step via CLI. Reuses existing login sessions — no passwords needed.
 
@@ -42,21 +42,21 @@ Commands can be chained with `&&`. The browser persists via daemon, so chaining 
 **Always chain when possible** — fewer tool calls = faster completion:
 ```bash
 # GOOD: open + inspect in one call (saves 1 round trip)
-opencli operate open https://example.com && opencli operate state
+opencli browser open https://example.com && opencli browser state
 
 # GOOD: fill form in one call (saves 2 round trips)
-opencli operate type 3 "hello" && opencli operate type 4 "world" && opencli operate click 7
+opencli browser type 3 "hello" && opencli browser type 4 "world" && opencli browser click 7
 
 # GOOD: type + verify in one call
-opencli operate type 5 "test@example.com" && opencli operate get value 5
+opencli browser type 5 "test@example.com" && opencli browser get value 5
 
 # GOOD: click + wait + state in one call (for page-changing clicks)
-opencli operate click 12 && opencli operate wait time 1 && opencli operate state
+opencli browser click 12 && opencli browser wait time 1 && opencli browser state
 
 # BAD: separate calls for each action (wasteful)
-opencli operate type 3 "hello"    # Don't do this
-opencli operate type 4 "world"    # when you can chain
-opencli operate click 7            # all three together
+opencli browser type 3 "hello"    # Don't do this
+opencli browser type 4 "world"    # when you can chain
+opencli browser click 7            # all three together
 ```
 
 **Page-changing — always put last** in a chain (subsequent commands see stale indices):
@@ -66,11 +66,11 @@ opencli operate click 7            # all three together
 
 ## Core Workflow
 
-1. **Navigate**: `opencli operate open <url>`
-2. **Inspect**: `opencli operate state` → elements with `[N]` indices
+1. **Navigate**: `opencli browser open <url>`
+2. **Inspect**: `opencli browser state` → elements with `[N]` indices
 3. **Interact**: use indices — `click`, `type`, `select`, `keys`
-4. **Wait** (if needed): `opencli operate wait selector ".loaded"` or `wait text "Success"`
-5. **Verify**: `opencli operate state` or `opencli operate get value <N>`
+4. **Wait** (if needed): `opencli browser wait selector ".loaded"` or `wait text "Success"`
+5. **Verify**: `opencli browser state` or `opencli browser get value <N>`
 6. **Repeat**: browser stays open between commands
 7. **Save**: write a TS adapter to `~/.opencli/clis/<site>/<command>.ts`
 
@@ -79,38 +79,38 @@ opencli operate click 7            # all three together
 ### Navigation
 
 ```bash
-opencli operate open <url>              # Open URL (page-changing)
-opencli operate back                    # Go back (page-changing)
-opencli operate scroll down             # Scroll (up/down, --amount N)
-opencli operate scroll up --amount 1000
+opencli browser open <url>              # Open URL (page-changing)
+opencli browser back                    # Go back (page-changing)
+opencli browser scroll down             # Scroll (up/down, --amount N)
+opencli browser scroll up --amount 1000
 ```
 
 ### Inspect (free & instant)
 
 ```bash
-opencli operate state                   # Structured DOM with [N] indices — PRIMARY tool
-opencli operate screenshot [path.png]   # Save visual to file — ONLY for user deliverables
+opencli browser state                   # Structured DOM with [N] indices — PRIMARY tool
+opencli browser screenshot [path.png]   # Save visual to file — ONLY for user deliverables
 ```
 
 ### Get (free & instant)
 
 ```bash
-opencli operate get title               # Page title
-opencli operate get url                 # Current URL
-opencli operate get text <index>        # Element text content
-opencli operate get value <index>       # Input/textarea value (use to verify after type)
-opencli operate get html                # Full page HTML
-opencli operate get html --selector "h1" # Scoped HTML
-opencli operate get attributes <index>  # Element attributes
+opencli browser get title               # Page title
+opencli browser get url                 # Current URL
+opencli browser get text <index>        # Element text content
+opencli browser get value <index>       # Input/textarea value (use to verify after type)
+opencli browser get html                # Full page HTML
+opencli browser get html --selector "h1" # Scoped HTML
+opencli browser get attributes <index>  # Element attributes
 ```
 
 ### Interact
 
 ```bash
-opencli operate click <index>           # Click element [N]
-opencli operate type <index> "text"     # Type into element [N]
-opencli operate select <index> "option" # Select dropdown
-opencli operate keys "Enter"            # Press key (Enter, Escape, Tab, Control+a)
+opencli browser click <index>           # Click element [N]
+opencli browser type <index> "text"     # Type into element [N]
+opencli browser select <index> "option" # Select dropdown
+opencli browser keys "Enter"            # Press key (Enter, Escape, Tab, Control+a)
 ```
 
 ### Wait
@@ -118,10 +118,10 @@ opencli operate keys "Enter"            # Press key (Enter, Escape, Tab, Control
 Three variants — use the right one for the situation:
 
 ```bash
-opencli operate wait time 3                       # Wait N seconds (fixed delay)
-opencli operate wait selector ".loaded"            # Wait until element appears in DOM
-opencli operate wait selector ".spinner" --timeout 5000  # With timeout (default 30s)
-opencli operate wait text "Success"                # Wait until text appears on page
+opencli browser wait time 3                       # Wait N seconds (fixed delay)
+opencli browser wait selector ".loaded"            # Wait until element appears in DOM
+opencli browser wait selector ".spinner" --timeout 5000  # With timeout (default 30s)
+opencli browser wait text "Success"                # Wait until text appears on page
 ```
 
 **When to wait**: After `open` on SPAs, after `click` that triggers async loading, before `eval` on dynamically rendered content.
@@ -131,36 +131,36 @@ opencli operate wait text "Success"                # Wait until text appears on 
 Use `eval` ONLY for reading data. Never use it to click, type, or navigate.
 
 ```bash
-opencli operate eval "document.title"
-opencli operate eval "JSON.stringify([...document.querySelectorAll('h2')].map(e => e.textContent))"
+opencli browser eval "document.title"
+opencli browser eval "JSON.stringify([...document.querySelectorAll('h2')].map(e => e.textContent))"
 
 # IMPORTANT: wrap complex logic in IIFE to avoid "already declared" errors
-opencli operate eval "(function(){ const items = [...document.querySelectorAll('.item')]; return JSON.stringify(items.map(e => e.textContent)); })()"
+opencli browser eval "(function(){ const items = [...document.querySelectorAll('.item')]; return JSON.stringify(items.map(e => e.textContent)); })()"
 ```
 
 **Selector safety**: Always use fallback selectors — `querySelector` returns `null` on miss:
 ```bash
 # BAD: crashes if selector misses
-opencli operate eval "document.querySelector('.title').textContent"
+opencli browser eval "document.querySelector('.title').textContent"
 
 # GOOD: fallback with || or ?.
-opencli operate eval "(document.querySelector('.title') || document.querySelector('h1') || {textContent:''}).textContent"
-opencli operate eval "document.querySelector('.title')?.textContent ?? 'not found'"
+opencli browser eval "(document.querySelector('.title') || document.querySelector('h1') || {textContent:''}).textContent"
+opencli browser eval "document.querySelector('.title')?.textContent ?? 'not found'"
 ```
 
 ### Network (API Discovery)
 
 ```bash
-opencli operate network                  # Show captured API requests (auto-captured since open)
-opencli operate network --detail 3       # Show full response body of request #3
-opencli operate network --all            # Include static resources
+opencli browser network                  # Show captured API requests (auto-captured since open)
+opencli browser network --detail 3       # Show full response body of request #3
+opencli browser network --all            # Include static resources
 ```
 
 ### Sedimentation (Save as CLI)
 
 ```bash
-opencli operate init hn/top              # Generate adapter scaffold at ~/.opencli/clis/hn/top.ts
-opencli operate verify hn/top            # Test the adapter (adds --limit 3 only if `limit` arg is defined)
+opencli browser init hn/top              # Generate adapter scaffold at ~/.opencli/clis/hn/top.ts
+opencli browser verify hn/top            # Test the adapter (adds --limit 3 only if `limit` arg is defined)
 ```
 
 - `init` auto-detects the domain from the active browser session (no need to specify it)
@@ -170,26 +170,26 @@ opencli operate verify hn/top            # Test the adapter (adds --limit 3 only
 ### Session
 
 ```bash
-opencli operate close                   # Close automation window
+opencli browser close                   # Close automation window
 ```
 
 ## Example: Extract HN Stories
 
 ```bash
-opencli operate open https://news.ycombinator.com
-opencli operate state                   # See [1] a "Story 1", [2] a "Story 2"...
-opencli operate eval "JSON.stringify([...document.querySelectorAll('.titleline a')].slice(0,5).map(a => ({title: a.textContent, url: a.href})))"
-opencli operate close
+opencli browser open https://news.ycombinator.com
+opencli browser state                   # See [1] a "Story 1", [2] a "Story 2"...
+opencli browser eval "JSON.stringify([...document.querySelectorAll('.titleline a')].slice(0,5).map(a => ({title: a.textContent, url: a.href})))"
+opencli browser close
 ```
 
 ## Example: Fill a Form
 
 ```bash
-opencli operate open https://httpbin.org/forms/post
-opencli operate state                   # See [3] input "Customer Name", [4] input "Telephone"
-opencli operate type 3 "OpenCLI" && opencli operate type 4 "555-0100"
-opencli operate get value 3             # Verify: "OpenCLI"
-opencli operate close
+opencli browser open https://httpbin.org/forms/post
+opencli browser state                   # See [3] input "Customer Name", [4] input "Telephone"
+opencli browser type 3 "OpenCLI" && opencli browser type 4 "555-0100"
+opencli browser get value 3             # Verify: "OpenCLI"
+opencli browser close
 ```
 
 ## Saving as Reusable CLI — Complete Workflow
@@ -198,27 +198,27 @@ opencli operate close
 
 ```bash
 # 1. Explore the website
-opencli operate open https://news.ycombinator.com
-opencli operate state                          # Understand DOM structure
+opencli browser open https://news.ycombinator.com
+opencli browser state                          # Understand DOM structure
 
 # 2. Discover APIs (crucial for high-quality adapters)
-opencli operate eval "fetch('/api/...').then(r=>r.json())"   # Trigger API calls
-opencli operate network                        # See captured API requests
-opencli operate network --detail 0             # Inspect response body
+opencli browser eval "fetch('/api/...').then(r=>r.json())"   # Trigger API calls
+opencli browser network                        # See captured API requests
+opencli browser network --detail 0             # Inspect response body
 
 # 3. Generate scaffold
-opencli operate init hn/top                    # Creates ~/.opencli/clis/hn/top.ts
+opencli browser init hn/top                    # Creates ~/.opencli/clis/hn/top.ts
 
 # 4. Edit the adapter (fill in func logic)
 # - If API found: use fetch() directly (Strategy.PUBLIC or COOKIE)
 # - If no API: use page.evaluate() for DOM extraction (Strategy.UI)
 
 # 5. Verify
-opencli operate verify hn/top                  # Runs the adapter and shows output
+opencli browser verify hn/top                  # Runs the adapter and shows output
 
 # 6. If verify fails, edit and retry
 # 7. Close when done
-opencli operate close
+opencli browser close
 ```
 
 ### Example adapter:
@@ -268,23 +268,23 @@ Save to `~/.opencli/clis/<site>/<command>.ts` → immediately available as `open
 2. **Sessions persist** — browser stays open between commands, no need to re-open
 3. **Use `eval` for data extraction** — `eval "JSON.stringify(...)"` is faster than multiple `get` calls
 4. **Use `network` to find APIs** — JSON APIs are more reliable than DOM scraping
-5. **Alias**: `opencli op` is shorthand for `opencli operate`
+5. **Alias**: `opencli op` is shorthand for `opencli browser`
 
 ## Common Pitfalls
 
 1. **`form.submit()` fails in automation** — Don't use `form.submit()` or `eval` to submit forms. Navigate directly to the search URL instead:
    ```bash
    # BAD: form.submit() often silently fails
-   opencli operate eval "document.querySelector('form').submit()"
+   opencli browser eval "document.querySelector('form').submit()"
    # GOOD: construct the URL and navigate
-   opencli operate open "https://github.com/search?q=opencli&type=repositories"
+   opencli browser open "https://github.com/search?q=opencli&type=repositories"
    ```
 
 2. **GitHub DOM changes frequently** — Prefer `data-testid` attributes when available; they are more stable than class names or tag structure.
 
 3. **SPA pages need `wait` before extraction** — After `open` or `click` on single-page apps, the DOM isn't ready immediately. Always `wait selector` or `wait text` before `eval`.
 
-4. **Use `state` before clicking** — Run `opencli operate state` to inspect available interactive elements and their indices. Never guess indices from memory.
+4. **Use `state` before clicking** — Run `opencli browser state` to inspect available interactive elements and their indices. Never guess indices from memory.
 
 5. **`evaluate` runs in browser context** — `page.evaluate()` in adapters executes inside the browser. Node.js APIs (`fs`, `path`, `process`) are NOT available. Use `fetch()` for network calls, DOM APIs for page data.
 
@@ -302,5 +302,5 @@ Save to `~/.opencli/clis/<site>/<command>.ts` → immediately available as `open
 |-------|-----|
 | "Browser not connected" | Run `opencli doctor` |
 | "attach failed: chrome-extension://" | Disable 1Password temporarily |
-| Element not found | `opencli operate scroll down && opencli operate state` |
-| Stale indices after page change | Run `opencli operate state` again to get fresh indices |
+| Element not found | `opencli browser scroll down && opencli browser state` |
+| Stale indices after page change | Run `opencli browser state` again to get fresh indices |

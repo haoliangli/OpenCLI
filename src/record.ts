@@ -584,7 +584,7 @@ export async function recordSession(opts: RecordOptions): Promise<RecordResult> 
       await injectIntoTab(workspace, tab.tabId, injectedTabs);
     }
 
-    console.log(chalk.bold('\n  Recording. Operate the page in the automation window.'));
+    console.log(chalk.bold('\n  Recording. Use the page in the browser automation window.'));
     console.log(chalk.dim(`  Will auto-stop after ${timeoutMs / 1000}s, or press Enter to stop now.\n`));
 
     // Race: Enter key vs timeout

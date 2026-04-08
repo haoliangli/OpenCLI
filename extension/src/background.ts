@@ -486,7 +486,7 @@ async function handleExec(cmd: Command, workspace: string): Promise<Result> {
   if (!cmd.code) return { id: cmd.id, ok: false, error: 'Missing code' };
   const tabId = await resolveTabId(cmd.tabId, workspace);
   try {
-    const aggressive = workspace.startsWith('operate:');
+    const aggressive = workspace.startsWith('browser:') || workspace.startsWith('operate:');
     const data = await executor.evaluateAsync(tabId, cmd.code, aggressive);
     return { id: cmd.id, ok: true, data };
   } catch (err) {
@@ -726,7 +726,7 @@ async function handleCdp(cmd: Command, workspace: string): Promise<Result> {
   }
   const tabId = await resolveTabId(cmd.tabId, workspace);
   try {
-    const aggressive = workspace.startsWith('operate:');
+    const aggressive = workspace.startsWith('browser:') || workspace.startsWith('operate:');
     await executor.ensureAttached(tabId, aggressive);
     const data = await chrome.debugger.sendCommand(
       { tabId },

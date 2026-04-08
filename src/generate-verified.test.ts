@@ -509,7 +509,7 @@ describe('generateVerifiedFromUrl', () => {
     expect(result.escalation!.stage).toBe('fallback');
     expect(result.escalation!.reason).toBe('empty-result');
     expect(result.escalation!.confidence).toBe('low');
-    expect(result.escalation!.suggested_action).toBe('inspect-with-operate');
+    expect(result.escalation!.suggested_action).toBe('inspect-with-browser');
     expect(result.escalation!.candidate).toBeDefined();
     expect(result.escalation!.candidate.command).toBe('demo/hot');
     expect(result.escalation!.candidate.reusability).toBe('unverified-candidate');
