@@ -2,8 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
   fetchDaemonStatus,
-  isDaemonRunning,
-  isExtensionConnected,
+  getDaemonHealth,
   requestDaemonShutdown,
 } from './daemon-client.js';
 
@@ -63,26 +62,13 @@ describe('daemon-client', () => {
     );
   });
 
-  it('isDaemonRunning reflects shared status availability', async () => {
-    vi.mocked(fetch).mockResolvedValue({
-      ok: true,
-      json: () =>
-        Promise.resolve({
-          ok: true,
-          pid: 123,
-          uptime: 10,
-          extensionConnected: false,
-          pending: 0,
-          lastCliRequestTime: Date.now(),
-          memoryMB: 16,
-          port: 19825,
-        }),
-    } as Response);
+  it('getDaemonHealth returns stopped when fetch fails', async () => {
+    vi.mocked(fetch).mockRejectedValue(new Error('ECONNREFUSED'));
 
-    await expect(isDaemonRunning()).resolves.toBe(true);
+    await expect(getDaemonHealth()).resolves.toEqual({ state: 'stopped' });
   });
 
-  it('isExtensionConnected reflects shared status payload', async () => {
+  it('getDaemonHealth returns no-extension when daemon running but extension not connected', async () => {
     vi.mocked(fetch).mockResolvedValue({
       ok: true,
       json: () =>
@@ -98,6 +84,26 @@ describe('daemon-client', () => {
         }),
     } as Response);
 
-    await expect(isExtensionConnected()).resolves.toBe(false);
+    await expect(getDaemonHealth()).resolves.toEqual({ state: 'no-extension', extensionVersion: undefined });
+  });
+
+  it('getDaemonHealth returns ready when extension connected', async () => {
+    vi.mocked(fetch).mockResolvedValue({
+      ok: true,
+      json: () =>
+        Promise.resolve({
+          ok: true,
+          pid: 123,
+          uptime: 10,
+          extensionConnected: true,
+          extensionVersion: '1.0.0',
+          pending: 0,
+          lastCliRequestTime: Date.now(),
+          memoryMB: 16,
+          port: 19825,
+        }),
+    } as Response);
+
+    await expect(getDaemonHealth()).resolves.toEqual({ state: 'ready', extensionVersion: '1.0.0' });
   });
 });

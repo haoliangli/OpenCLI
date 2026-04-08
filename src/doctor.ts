@@ -6,9 +6,8 @@
 
 import chalk from 'chalk';
 import { DEFAULT_DAEMON_PORT } from './constants.js';
-import { checkDaemonStatus } from './browser/discover.js';
 import { BrowserBridge } from './browser/index.js';
-import { listSessions } from './browser/daemon-client.js';
+import { getDaemonHealth, listSessions } from './browser/daemon-client.js';
 import { getErrorMessage } from './errors.js';
 import { getRuntimeLabel } from './runtime-detect.js';
 
@@ -58,31 +57,22 @@ export async function checkConnectivity(opts?: { timeout?: number }): Promise<Co
 }
 
 export async function runBrowserDoctor(opts: DoctorOptions = {}): Promise<DoctorReport> {
-  // Try to auto-start daemon if it's not running, so we show accurate status.
-  let initialStatus = await checkDaemonStatus();
-  if (!initialStatus.running) {
-    try {
-      const bridge = new BrowserBridge();
-      await bridge.connect({ timeout: 5 });
-      await bridge.close();
-    } catch {
-      // Auto-start failed; we'll report it below.
-    }
-  }
-
-  // Run the live connectivity check — it may also auto-start the daemon as a
-  // side-effect, so we read daemon status only *after* all side-effects settle.
+  // Run the live connectivity check first — checkConnectivity uses BrowserBridge
+  // which handles auto-start internally, so we don't need a separate auto-start step.
   let connectivity: ConnectivityResult | undefined;
   if (opts.live) {
     connectivity = await checkConnectivity();
   }
 
-  const status = await checkDaemonStatus();
-  const daemonFlaky = !!(connectivity?.ok && !status.running);
-  const extensionFlaky = !!(connectivity?.ok && status.running && !status.extensionConnected);
-  const daemonRunning = status.running;
-  const extensionConnected = status.extensionConnected;
-  const sessions = opts.sessions && status.running && status.extensionConnected
+  // Single health check after any side-effects from connectivity test settle.
+  const health = await getDaemonHealth();
+
+  const daemonRunning = health.state !== 'stopped';
+  const extensionConnected = health.state === 'ready';
+  const daemonFlaky = !!(connectivity?.ok && !daemonRunning);
+  const extensionFlaky = !!(connectivity?.ok && daemonRunning && !extensionConnected);
+
+  const sessions = opts.sessions && extensionConnected
     ? await listSessions() as Array<{ workspace: string; windowId: number; tabCount: number; idleMsRemaining: number }>
     : undefined;
 
@@ -112,12 +102,12 @@ export async function runBrowserDoctor(opts: DoctorOptions = {}): Promise<Doctor
   if (connectivity && !connectivity.ok) {
     issues.push(`Browser connectivity test failed: ${connectivity.error ?? 'unknown'}`);
   }
-  if (status.extensionVersion && opts.cliVersion) {
-    const extMajor = status.extensionVersion.split('.')[0];
+  if (health.extensionVersion && opts.cliVersion) {
+    const extMajor = health.extensionVersion.split('.')[0];
     const cliMajor = opts.cliVersion.split('.')[0];
     if (extMajor !== cliMajor) {
       issues.push(
-        `Extension major version mismatch: extension v${status.extensionVersion} ≠ CLI v${opts.cliVersion}\n` +
+        `Extension major version mismatch: extension v${health.extensionVersion} ≠ CLI v${opts.cliVersion}\n` +
         '  Download the latest extension from: https://github.com/jackwener/opencli/releases',
       );
     }
@@ -129,7 +119,7 @@ export async function runBrowserDoctor(opts: DoctorOptions = {}): Promise<Doctor
     daemonFlaky,
     extensionConnected,
     extensionFlaky,
-    extensionVersion: status.extensionVersion,
+    extensionVersion: health.extensionVersion,
     connectivity,
     sessions,
     issues,
