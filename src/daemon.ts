@@ -25,7 +25,6 @@ import { DEFAULT_DAEMON_PORT } from './constants.js';
 import { EXIT_CODES } from './errors.js';
 
 const PORT = parseInt(process.env.OPENCLI_DAEMON_PORT ?? String(DEFAULT_DAEMON_PORT), 10);
-const WINDOW_FOCUSED = process.env.OPENCLI_WINDOW_FOCUSED === '1' || process.env.OPENCLI_WINDOW_FOCUSED === 'true';
 
 // ─── State ───────────────────────────────────────────────────────────
 
@@ -175,7 +174,6 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse): Promise
           reject(new Error(`Command timeout (${timeoutMs / 1000}s)`));
         }, timeoutMs);
         pending.set(body.id, { resolve, reject, timer });
-        if (WINDOW_FOCUSED) body.windowFocused = true;
         extensionWs!.send(JSON.stringify(body));
       });
 

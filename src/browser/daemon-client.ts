@@ -48,6 +48,8 @@ export interface DaemonCommand {
   pattern?: string;
   cdpMethod?: string;
   cdpParams?: Record<string, unknown>;
+  /** When true, automation windows are created in the foreground */
+  windowFocused?: boolean;
 }
 
 export interface DaemonResult {
@@ -137,7 +139,9 @@ async function sendCommandRaw(
 
   for (let attempt = 1; attempt <= maxRetries; attempt++) {
     const id = generateId();
-    const command: DaemonCommand = { id, action, ...params };
+    const wf = process.env.OPENCLI_WINDOW_FOCUSED;
+    const windowFocused = (wf === '1' || wf === 'true') ? true : undefined;
+    const command: DaemonCommand = { id, action, ...params, ...(windowFocused && { windowFocused }) };
     try {
       const res = await requestDaemon('/command', {
         method: 'POST',
