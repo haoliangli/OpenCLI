@@ -3,7 +3,7 @@ import { BrowserBridge, generateStealthJs } from './browser/index.js';
 import { extractTabEntries, diffTabIndexes, appendLimited } from './browser/tabs.js';
 import { withTimeoutMs } from './runtime.js';
 import { __test__ as cdpTest } from './browser/cdp.js';
-import { isRetryableSettleError } from './browser/page.js';
+import { classifyBrowserError } from './browser/errors.js';
 import * as daemonClient from './browser/daemon-client.js';
 
 describe('browser helpers', () => {
@@ -49,10 +49,20 @@ describe('browser helpers', () => {
     await expect(withTimeoutMs(new Promise(() => {}), 10, 'timeout')).rejects.toThrow('timeout');
   });
 
-  it('retries settle only for target-invalidated errors', () => {
-    expect(isRetryableSettleError(new Error('{"code":-32000,"message":"Inspected target navigated or closed"}'))).toBe(true);
-    expect(isRetryableSettleError(new Error('attach failed: target no longer exists'))).toBe(false);
-    expect(isRetryableSettleError(new Error('malformed exec payload'))).toBe(false);
+  it('classifies browser errors with correct retry advice', () => {
+    // CDP target navigation — retryable with short delay
+    const nav = classifyBrowserError(new Error('{"code":-32000,"message":"Inspected target navigated or closed"}'));
+    expect(nav.retryable).toBe(true);
+    expect(nav.delayMs).toBe(200);
+
+    // Extension transient — retryable with longer delay
+    const ext = classifyBrowserError(new Error('Extension disconnected'));
+    expect(ext.retryable).toBe(true);
+    expect(ext.delayMs).toBe(1500);
+
+    // Non-transient errors — not retryable
+    expect(classifyBrowserError(new Error('malformed exec payload')).retryable).toBe(false);
+    expect(classifyBrowserError(new Error('Permission denied')).retryable).toBe(false);
   });
 
   it('prefers the real Electron app target over DevTools and blank pages', () => {
