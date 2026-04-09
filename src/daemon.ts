@@ -45,10 +45,6 @@ function pushLog(entry: LogEntry): void {
   if (logBuffer.length > LOG_BUFFER_SIZE) logBuffer.shift();
 }
 
-// ─── Request tracking ────────────────────────────────────────────────
-
-let lastCliRequestTime = Date.now();
-
 // ─── HTTP Server ─────────────────────────────────────────────────────
 
 const MAX_BODY = 1024 * 1024; // 1 MB — commands are tiny; this prevents OOM
@@ -128,7 +124,6 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse): Promise
       extensionConnected: extensionWs?.readyState === WebSocket.OPEN,
       extensionVersion,
       pending: pending.size,
-      lastCliRequestTime,
       memoryMB: Math.round(mem.rss / 1024 / 1024 * 10) / 10,
       port: PORT,
     });
@@ -158,7 +153,6 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse): Promise
   }
 
   if (req.method === 'POST' && url === '/command') {
-    lastCliRequestTime = Date.now();
     try {
       const body = JSON.parse(await readBody(req));
       if (!body.id) {
