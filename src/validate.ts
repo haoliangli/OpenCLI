@@ -35,6 +35,23 @@ export function validateClisWithTarget(_dirs: string[], target?: string): Valida
   const results: CommandValidationResult[] = [];
   let errors = 0; let warnings = 0;
 
+  if (registry.size === 0) {
+    const r: CommandValidationResult = {
+      label: '(registry)',
+      errors: [],
+      warnings: ['Registry is empty — no commands discovered. Did discoverClis() run?'],
+    };
+    return { ok: true, results: [r], errors: 0, warnings: 1, commands: 0 };
+  }
+
+  // Resolve alias target: if target is "site/alias", find the canonical command
+  let resolvedTarget = target;
+  if (target?.includes('/') && !registry.has(target)) {
+    // target might be an alias key — look it up
+    const aliasCmd = registry.get(target);
+    if (aliasCmd) resolvedTarget = fullName(aliasCmd);
+  }
+
   // Deduplicate: registry maps both canonical "site/name" and aliases to the same command
   const seen = new Set<CliCommand>();
 
@@ -45,11 +62,11 @@ export function validateClisWithTarget(_dirs: string[], target?: string): Valida
     seen.add(cmd);
 
     // Target filter: "site" or "site/name"
-    if (target) {
-      if (target.includes('/')) {
-        if (key !== target) continue;
+    if (resolvedTarget) {
+      if (resolvedTarget.includes('/')) {
+        if (key !== resolvedTarget) continue;
       } else {
-        if (cmd.site !== target) continue;
+        if (cmd.site !== resolvedTarget) continue;
       }
     }
 
