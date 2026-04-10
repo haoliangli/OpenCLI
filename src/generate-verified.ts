@@ -488,8 +488,8 @@ function candidateToJs(candidate: CandidateYaml): string {
   const browser = detectBrowserFlag(candidate);
 
   const argsArray = Object.entries(candidate.args ?? {}).map(([name, def]) => {
-    const parts: string[] = [`name: '${name}'`];
-    if (def.type && def.type !== 'str') parts.push(`type: '${def.type}'`);
+    const parts: string[] = [`name: '${name.replace(/'/g, "\\'")}'`];
+    if (def.type && def.type !== 'str') parts.push(`type: '${def.type.replace(/'/g, "\\'")}'`);
     if (def.required) parts.push('required: true');
     if (def.default !== undefined) parts.push(`default: ${JSON.stringify(def.default)}`);
     if (def.description) parts.push(`help: '${def.description.replace(/'/g, "\\'")}'`);
@@ -527,10 +527,10 @@ function candidateToJs(candidate: CandidateYaml): string {
   lines.push("import { cli, Strategy } from '@jackwener/opencli/registry';");
   lines.push('');
   lines.push('cli({');
-  lines.push(`  site: '${candidate.site}',`);
-  lines.push(`  name: '${candidate.name}',`);
+  lines.push(`  site: '${candidate.site.replace(/'/g, "\\'")}',`);
+  lines.push(`  name: '${candidate.name.replace(/'/g, "\\'")}',`);
   if (candidate.description) lines.push(`  description: '${candidate.description.replace(/'/g, "\\'")}',`);
-  if (candidate.domain) lines.push(`  domain: '${candidate.domain}',`);
+  if (candidate.domain) lines.push(`  domain: '${candidate.domain.replace(/'/g, "\\'")}',`);
   lines.push(`  strategy: ${stratEnum},`);
   lines.push(`  browser: ${browser},`);
   if (argsArray.length > 0) {

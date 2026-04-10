@@ -183,9 +183,9 @@ function redactNetworkRequest(req: unknown): unknown {
     redacted.responseHeaders = redactHeaders(redacted.responseHeaders as Record<string, string>);
   }
 
-  // Truncate response body
+  // Redact and truncate response body
   if (typeof redacted.body === 'string') {
-    redacted.body = truncate(redacted.body, MAX_REQUEST_BODY_CHARS);
+    redacted.body = redactText(truncate(redacted.body, MAX_REQUEST_BODY_CHARS));
   }
   if ('responseBody' in redacted) {
     redacted.responseBody = sanitizeCapturedValue(redacted.responseBody);
