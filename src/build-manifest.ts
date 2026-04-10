@@ -18,6 +18,7 @@ import { findPackageRoot, getCliManifestPath } from './package-paths.js';
 
 const PACKAGE_ROOT = findPackageRoot(fileURLToPath(import.meta.url));
 const CLIS_DIR = path.join(PACKAGE_ROOT, 'clis');
+const DIST_CLIS_DIR = path.join(PACKAGE_ROOT, 'dist', 'clis');
 const OUTPUT = getCliManifestPath(CLIS_DIR);
 
 export interface ManifestEntry {
@@ -132,6 +133,14 @@ export async function loadTsManifestEntries(
         })
         .map(([, cmd]) => cmd);
 
+    // Resolve sourceFile relative to clis/ (not dist/clis/).
+    // When scanning compiled JS from dist/clis/, map back to the original .ts path.
+    let sourceRelative = path.relative(CLIS_DIR, filePath);
+    if (filePath.startsWith(DIST_CLIS_DIR)) {
+      const distRelative = path.relative(DIST_CLIS_DIR, filePath);
+      sourceRelative = distRelative.replace(/\.js$/, '.ts');
+    }
+
     const seen = new Set<string>();
     return runtimeCommands
       .filter((cmd) => {
@@ -141,7 +150,7 @@ export async function loadTsManifestEntries(
         return true;
       })
       .sort((a, b) => a.name.localeCompare(b.name))
-      .map(cmd => toManifestEntry(cmd, modulePath, path.relative(CLIS_DIR, filePath)));
+      .map(cmd => toManifestEntry(cmd, modulePath, sourceRelative));
   } catch (err) {
     // If parsing fails, log a warning (matching scanYaml behaviour) and skip the entry.
     process.stderr.write(`Warning: failed to scan ${filePath}: ${getErrorMessage(err)}\n`);
@@ -152,14 +161,21 @@ export async function loadTsManifestEntries(
 export async function buildManifest(): Promise<ManifestEntry[]> {
   const manifest = new Map<string, ManifestEntry>();
 
-  if (fs.existsSync(CLIS_DIR)) {
-    for (const site of fs.readdirSync(CLIS_DIR)) {
-      const siteDir = path.join(CLIS_DIR, site);
+  // Scan compiled JS in dist/clis/ instead of raw TS in clis/.
+  // Node's type stripping does not rewrite '.js' → '.ts' in import
+  // specifiers, so dynamically importing .ts source files fails whenever
+  // they contain relative imports like './utils.js'.  Importing the
+  // tsc-compiled .js avoids this entirely.
+  const scanDir = fs.existsSync(DIST_CLIS_DIR) ? DIST_CLIS_DIR : CLIS_DIR;
+
+  if (fs.existsSync(scanDir)) {
+    for (const site of fs.readdirSync(scanDir)) {
+      const siteDir = path.join(scanDir, site);
       if (!fs.statSync(siteDir).isDirectory()) continue;
       for (const file of fs.readdirSync(siteDir)) {
         if (
-          (file.endsWith('.ts') && !file.endsWith('.d.ts') && !file.endsWith('.test.ts') && file !== 'index.ts') ||
-          (file.endsWith('.js') && !file.endsWith('.d.js') && !file.endsWith('.test.js') && file !== 'index.js')
+          (file.endsWith('.js') && !file.endsWith('.d.js') && !file.endsWith('.test.js') && file !== 'index.js') ||
+          (scanDir === CLIS_DIR && file.endsWith('.ts') && !file.endsWith('.d.ts') && !file.endsWith('.test.ts') && file !== 'index.ts')
         ) {
           const filePath = path.join(siteDir, file);
           const entries = await loadTsManifestEntries(filePath, site);
