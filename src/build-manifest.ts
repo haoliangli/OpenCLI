@@ -19,7 +19,10 @@ import { findPackageRoot, getCliManifestPath } from './package-paths.js';
 const PACKAGE_ROOT = findPackageRoot(fileURLToPath(import.meta.url));
 const CLIS_DIR = path.join(PACKAGE_ROOT, 'clis');
 const DIST_CLIS_DIR = path.join(PACKAGE_ROOT, 'dist', 'clis');
-const OUTPUT = getCliManifestPath(CLIS_DIR);
+// Write manifest next to the directory the runtime actually scans (dist/clis/).
+// main.ts resolves BUILTIN_CLIS to dist/clis/ (relative to dist/src/main.js),
+// so the manifest must be at dist/cli-manifest.json for discoverClis() to find it.
+const OUTPUT = getCliManifestPath(DIST_CLIS_DIR);
 
 export interface ManifestEntry {
   site: string;
