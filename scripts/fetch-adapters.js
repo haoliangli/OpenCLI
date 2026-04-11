@@ -1,21 +1,25 @@
 #!/usr/bin/env node
 
 /**
- * Smart-sync official CLI adapters from the installed package to ~/.opencli/clis/.
+ * Sparse adapter sync: keeps ~/.opencli/clis/ clean by removing stale overrides.
  *
- * Update strategy (hash-based, file-level granularity):
- * - Only copies files whose content has changed (hash mismatch) or are new
- * - Removed official files (in old manifest but not new) are cleaned up
- * - User-created files (never in any manifest) are preserved
+ * Strategy (hash-based, site-level granularity):
+ * - When an official site has upstream changes: DELETE the local override
+ *   (do NOT copy new version — runtime falls back to package baseline)
+ * - When an official site has no changes: leave local override intact
+ * - User-created custom sites (not in package): always preserved
  * - Skips entirely if already synced at the same version
  *
+ * ~/.opencli/clis/ is a sparse override layer, not a full copy.
+ * Only eject-ed or user-modified sites appear here.
+ *
  * Only runs on global install (npm install -g) or explicit OPENCLI_FETCH=1.
- * No network calls — copies directly from clis/ in the installed package.
+ * No network calls — reads hashes from clis/ in the installed package.
  *
  * This is an ESM script (package.json type: module). No TypeScript, no src/ imports.
  */
 
-import { existsSync, mkdirSync, rmSync, cpSync, readFileSync, writeFileSync, readdirSync, statSync, unlinkSync } from 'node:fs';
+import { existsSync, mkdirSync, rmSync, readFileSync, writeFileSync, readdirSync, statSync, unlinkSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 import { join, resolve, dirname } from 'node:path';
 import { homedir } from 'node:os';
@@ -142,45 +146,15 @@ export function fetchAdapters() {
     }
   }
 
-  // 2. Site-level sync: delete old site dir first, then write fresh copy
-  //    This ensures stale files from older versions are cleaned up.
-  let copied = 0;
-  let skipped = 0;
-  const deletedSites = new Set();
-  for (const relPath of newOfficialFiles) {
-    const site = relPath.split('/')[0];
-    const src = join(BUILTIN_CLIS, relPath);
-    const dst = join(USER_CLIS_DIR, relPath);
-
-    if (!changedSites.has(site)) {
-      skipped++;
-      continue;
-    }
-
-    // Delete the entire site directory once before writing new files
-    if (!deletedSites.has(site)) {
-      const siteDir = join(USER_CLIS_DIR, site);
-      if (existsSync(siteDir)) rmSync(siteDir, { recursive: true, force: true });
-      deletedSites.add(site);
-    }
-
-    mkdirSync(dirname(dst), { recursive: true });
-    cpSync(src, dst, { force: true });
-    copied++;
-  }
-
-  // 2. Remove files that were official but are no longer (upstream deleted)
-  let removed = 0;
-  for (const relPath of oldOfficialFiles) {
-    if (!newOfficialFiles.has(relPath)) {
-      const dst = join(USER_CLIS_DIR, relPath);
-      try {
-        unlinkSync(dst);
-        pruneEmptyDirs(dst, USER_CLIS_DIR);
-        removed++;
-      } catch {
-        // File may not exist locally
-      }
+  // 2. Sparse cleanup: for changed/removed official sites, delete local overrides.
+  //    Do NOT copy new versions — runtime falls back to package baseline.
+  //    Only eject-ed sites live in ~/.opencli/clis/.
+  let cleared = 0;
+  for (const site of changedSites) {
+    const siteDir = join(USER_CLIS_DIR, site);
+    if (existsSync(siteDir)) {
+      rmSync(siteDir, { recursive: true, force: true });
+      cleared++;
     }
   }
 
@@ -270,8 +244,8 @@ export function fetchAdapters() {
     updatedAt: new Date().toISOString(),
   }, null, 2));
 
-  log(`Synced adapters to ${USER_CLIS_DIR}: ${copied} updated, ${skipped} unchanged` +
-    (removed > 0 ? `, ${removed} removed` : ''));
+  log(`Synced adapters: ${cleared} local override(s) cleared` +
+    (tsCleaned > 0 ? `, ${tsCleaned} stale .ts files removed` : ''));
 }
 
 function main() {
