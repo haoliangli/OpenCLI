@@ -142,17 +142,26 @@ export function fetchAdapters() {
     }
   }
 
-  // 2. Site-level sync: if any file in a site changed, overwrite the entire site
+  // 2. Site-level sync: delete old site dir first, then write fresh copy
+  //    This ensures stale files from older versions are cleaned up.
   let copied = 0;
   let skipped = 0;
+  const deletedSites = new Set();
   for (const relPath of newOfficialFiles) {
     const site = relPath.split('/')[0];
     const src = join(BUILTIN_CLIS, relPath);
     const dst = join(USER_CLIS_DIR, relPath);
 
-    if (!changedSites.has(site) && existsSync(dst)) {
+    if (!changedSites.has(site)) {
       skipped++;
       continue;
+    }
+
+    // Delete the entire site directory once before writing new files
+    if (!deletedSites.has(site)) {
+      const siteDir = join(USER_CLIS_DIR, site);
+      if (existsSync(siteDir)) rmSync(siteDir, { recursive: true, force: true });
+      deletedSites.add(site);
     }
 
     mkdirSync(dirname(dst), { recursive: true });
