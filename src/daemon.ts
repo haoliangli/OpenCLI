@@ -31,6 +31,7 @@ const PORT = parseInt(process.env.OPENCLI_DAEMON_PORT ?? String(DEFAULT_DAEMON_P
 
 let extensionWs: WebSocket | null = null;
 let extensionVersion: string | null = null;
+let extensionCompatRange: string | null = null;
 const pending = new Map<string, {
   resolve: (data: unknown) => void;
   reject: (error: Error) => void;
@@ -124,6 +125,7 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse): Promise
       uptime,
       extensionConnected: extensionWs?.readyState === WebSocket.OPEN,
       extensionVersion,
+      extensionCompatRange,
       pending: pending.size,
       memoryMB: Math.round(mem.rss / 1024 / 1024 * 10) / 10,
       port: PORT,
@@ -211,6 +213,7 @@ wss.on('connection', (ws: WebSocket) => {
   log.info('[daemon] Extension connected');
   extensionWs = ws;
   extensionVersion = null; // cleared until hello message arrives
+  extensionCompatRange = null;
 
   // ── Heartbeat: ping every 15s, close if 2 pongs missed ──
   let missedPongs = 0;
@@ -240,6 +243,7 @@ wss.on('connection', (ws: WebSocket) => {
       // Handle hello message from extension (version handshake)
       if (msg.type === 'hello') {
         extensionVersion = typeof msg.version === 'string' ? msg.version : null;
+        extensionCompatRange = typeof msg.compatRange === 'string' ? msg.compatRange : null;
         return;
       }
 
@@ -270,6 +274,7 @@ wss.on('connection', (ws: WebSocket) => {
     if (extensionWs === ws) {
       extensionWs = null;
       extensionVersion = null;
+      extensionCompatRange = null;
       // Reject all pending requests since the extension is gone
       for (const [id, p] of pending) {
         clearTimeout(p.timer);
