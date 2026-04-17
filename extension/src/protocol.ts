@@ -80,8 +80,6 @@ export interface Result {
   error?: string;
   /** Page identity (targetId) — present only on page-scoped command responses */
   page?: string;
-  /** Set when a new window was created because the previous session expired (idle timeout). */
-  sessionExpired?: boolean;
 }
 
 /** Default daemon port */

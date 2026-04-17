@@ -8,7 +8,6 @@ import { DEFAULT_DAEMON_PORT } from '../constants.js';
 import type { BrowserSessionInfo } from '../types.js';
 import { sleep } from '../utils.js';
 import { classifyBrowserError } from './errors.js';
-import { log } from '../logger.js';
 
 const DAEMON_PORT = parseInt(process.env.OPENCLI_DAEMON_PORT ?? String(DEFAULT_DAEMON_PORT), 10);
 const DAEMON_URL = `http://127.0.0.1:${DAEMON_PORT}`;
@@ -62,8 +61,6 @@ export interface DaemonResult {
   error?: string;
   /** Page identity (targetId) — present on page-scoped command responses */
   page?: string;
-  /** Set when a new window was created because the previous session expired (idle timeout). */
-  sessionExpired?: boolean;
 }
 
 export interface DaemonStatus {
@@ -159,10 +156,6 @@ async function sendCommandRaw(
 
       const result = (await res.json()) as DaemonResult;
 
-      if (result.sessionExpired) {
-        log.warn('Previous browser session expired (idle timeout). A new window was created.');
-      }
-
       if (!result.ok) {
         const advice = classifyBrowserError(new Error(result.error ?? ''));
         if (advice.retryable && attempt < maxRetries) {
@@ -204,9 +197,9 @@ export async function sendCommand(
 export async function sendCommandFull(
   action: DaemonCommand['action'],
   params: Omit<DaemonCommand, 'id' | 'action'> = {},
-): Promise<{ data: unknown; page?: string; sessionExpired?: boolean }> {
+): Promise<{ data: unknown; page?: string }> {
   const result = await sendCommandRaw(action, params);
-  return { data: result.data, page: result.page, sessionExpired: result.sessionExpired };
+  return { data: result.data, page: result.page };
 }
 
 export async function listSessions(): Promise<BrowserSessionInfo[]> {

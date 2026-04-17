@@ -352,29 +352,6 @@ describe('background tab isolation', () => {
     expect(mod.__test__.getSession('browser:default')).toBeNull();
   });
 
-  it('sets sessionExpired flag when session was expired before command', async () => {
-    const { chrome } = createChromeMock();
-    vi.stubGlobal('chrome', chrome);
-
-    const mod = await import('./background');
-
-    // Simulate: a session expired (added to expiredWorkspaces)
-    mod.__test__.expiredWorkspaces.add('browser:default');
-
-    // Send a navigate command — should get sessionExpired=true in the result
-    const result = await mod.__test__.handleCommand({
-      id: 'test-1',
-      action: 'navigate',
-      url: 'https://example.com',
-      workspace: 'browser:default',
-    });
-
-    expect(result.ok).toBe(true);
-    expect(result.sessionExpired).toBe(true);
-    // Flag should be consumed
-    expect(mod.__test__.expiredWorkspaces.has('browser:default')).toBe(false);
-  });
-
   it('clears workspaceTimeoutOverrides on idle expiry', async () => {
     const { chrome } = createChromeMock();
     vi.useFakeTimers();
