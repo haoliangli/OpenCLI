@@ -50,7 +50,7 @@ export function registerCommandToProgram(siteCmd: Command, cmd: CliCommand): voi
     }
   }
   subCmd
-    .option('-f, --format <fmt>', 'Output format: yaml, json', 'yaml')
+    .option('-f, --format <fmt>', 'Output format: yaml, json, plain, md, csv', 'yaml')
     .option('-v, --verbose', 'Debug output', false);
 
   subCmd.addHelpText('after', formatRegistryHelpText(cmd));
@@ -77,7 +77,8 @@ export function registerCommandToProgram(siteCmd: Command, cmd: CliCommand): voi
       const kwargs = prepareCommandArgs(cmd, rawKwargs);
 
       const verbose = optionsRecord.verbose === true;
-      const format = typeof optionsRecord.format === 'string' ? optionsRecord.format : 'yaml';
+      let format = typeof optionsRecord.format === 'string' ? optionsRecord.format : 'yaml';
+      const formatExplicit = subCmd.getOptionValueSource('format') === 'cli';
       if (verbose) process.env.OPENCLI_VERBOSE = '1';
       if (cmd.deprecated) {
         const message = typeof cmd.deprecated === 'string' ? cmd.deprecated : `${fullName(cmd)} is deprecated.`;
@@ -89,10 +90,14 @@ export function registerCommandToProgram(siteCmd: Command, cmd: CliCommand): voi
       if (result === null || result === undefined) {
         return;
       }
+      const resolved = getRegistry().get(fullName(cmd)) ?? cmd;
+      if (!formatExplicit && resolved.defaultFormat) {
+        format = resolved.defaultFormat;
+      }
       if (verbose && (!result || (Array.isArray(result) && result.length === 0))) {
         log.warn('Command returned an empty result.');
       }
-      renderOutput(result, { fmt: format });
+      renderOutput(result, { fmt: format, columns: resolved.columns });
     } catch (err) {
       renderError(err, fullName(cmd), optionsRecord.verbose === true);
       process.exitCode = resolveExitCode(err);

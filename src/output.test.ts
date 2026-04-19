@@ -37,7 +37,29 @@ describe('output TTY detection', () => {
     expect(JSON.parse(out)).toEqual([{ name: 'alice' }]);
   });
 
-  it('falls back to YAML for unsupported legacy rich formats', () => {
+  it('renders plain output for chat-style single-field rows', () => {
+    Object.defineProperty(process.stdout, 'isTTY', { value: true, writable: true });
+    render([{ response: 'hello' }], { fmt: 'plain' });
+    const out = logSpy.mock.calls.map((c: unknown[]) => c[0]).join('\n');
+    expect(out).toContain('hello');
+  });
+
+  it('renders markdown tables as plain text', () => {
+    Object.defineProperty(process.stdout, 'isTTY', { value: true, writable: true });
+    render([{ name: 'alice' }], { fmt: 'md' });
+    const out = logSpy.mock.calls.map((c: unknown[]) => c[0]).join('\n');
+    expect(out).toContain('| name |');
+  });
+
+  it('renders csv as plain text', () => {
+    Object.defineProperty(process.stdout, 'isTTY', { value: true, writable: true });
+    render([{ name: 'alice' }], { fmt: 'csv' });
+    const out = logSpy.mock.calls.map((c: unknown[]) => c[0]).join('\n');
+    expect(out).toContain('name');
+    expect(out).toContain('alice');
+  });
+
+  it('falls back to YAML for removed table format', () => {
     Object.defineProperty(process.stdout, 'isTTY', { value: true, writable: true });
     render([{ name: 'alice' }], { fmt: 'table' });
     const out = logSpy.mock.calls.map((c: unknown[]) => c[0]).join('\n');

@@ -266,7 +266,7 @@ describe('commanderAdapter default formats', () => {
     process.exitCode = undefined;
   });
 
-  it('defaults to yaml even if the command carries a legacy defaultFormat', async () => {
+  it('preserves a command defaultFormat when the user does not override it', async () => {
     const program = new Command();
     const siteCmd = program.command('gemini');
     registerCommandToProgram(siteCmd, cmd);
@@ -275,7 +275,7 @@ describe('commanderAdapter default formats', () => {
 
     expect(mockRenderOutput).toHaveBeenCalledWith(
       [{ response: 'hello' }],
-      expect.objectContaining({ fmt: 'yaml' }),
+      expect.objectContaining({ fmt: 'plain' }),
     );
   });
 

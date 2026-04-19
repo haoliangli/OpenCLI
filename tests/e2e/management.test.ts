@@ -30,7 +30,20 @@ describe('management commands E2E', () => {
     expect(stdout).toContain('command:');
     expect(stdout).toContain('site:');
     expect(stdout).toContain('hackernews');
-    });
+  });
+
+  it('list -f csv produces valid csv', async () => {
+    const { stdout, code } = await runCli(['list', '-f', 'csv']);
+    expect(code).toBe(0);
+    const lines = stdout.trim().split('\n');
+    expect(lines.length).toBeGreaterThan(50);
+  });
+
+  it('list -f md produces markdown table', async () => {
+    const { stdout, code } = await runCli(['list', '-f', 'md']);
+    expect(code).toBe(0);
+    expect(stdout).toContain('| command |');
+  });
 
   // ── validate ──
   it('validate passes for all built-in adapters', async () => {

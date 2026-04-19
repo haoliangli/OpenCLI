@@ -199,7 +199,7 @@ export function createProgram(BUILTIN_CLIS: string, USER_CLIS: string): Command 
   program
     .command('list')
     .description('List all available CLI commands')
-    .option('-f, --format <fmt>', 'Output format: yaml, json', 'yaml')
+    .option('-f, --format <fmt>', 'Output format: yaml, json, plain, md, csv', 'yaml')
     .option('--json', 'JSON output (deprecated)')
     .action((opts) => {
       const registry = getRegistry();
@@ -1033,7 +1033,7 @@ cli({
   pluginCmd
     .command('list')
     .description('List installed plugins')
-    .option('-f, --format <fmt>', 'Output format: yaml, json', 'yaml')
+    .option('-f, --format <fmt>', 'Output format: yaml, json, plain, md, csv', 'yaml')
     .action(async (opts) => {
       const { listPlugins } = await import('./plugin.js');
       renderOutput(listPlugins(), { fmt: opts.format });

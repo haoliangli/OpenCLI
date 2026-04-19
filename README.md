@@ -307,10 +307,12 @@ opencli xiaoyuzhou transcript 69dd0c98e2c8be31551f6a33 --output ./xiaoyuzhou-tra
 
 ## Output Formats
 
-Registry-backed commands, `opencli list`, and `opencli plugin list` support `--format` / `-f` with `yaml` (default) and `json`.
+Registry-backed commands, `opencli list`, and `opencli plugin list` support `--format` / `-f` with `yaml` (default), `json`, `plain`, `md`, and `csv`. Terminal rich layout is removed; text formats stay available.
 
 ```bash
 opencli bilibili hot -f json    # Pipe to jq or LLMs
+opencli bilibili hot -f plain   # Plain text response
+opencli bilibili hot -f csv     # Spreadsheet-friendly
 opencli bilibili hot -v         # Verbose: show pipeline debug steps
 ```
 
