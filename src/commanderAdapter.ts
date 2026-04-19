@@ -50,7 +50,7 @@ export function registerCommandToProgram(siteCmd: Command, cmd: CliCommand): voi
     }
   }
   subCmd
-    .option('-f, --format <fmt>', 'Output format: yaml, json, table, plain, md, csv', 'yaml')
+    .option('-f, --format <fmt>', 'Output format: yaml, json', 'yaml')
     .option('-v, --verbose', 'Debug output', false);
 
   subCmd.addHelpText('after', formatRegistryHelpText(cmd));
@@ -77,8 +77,7 @@ export function registerCommandToProgram(siteCmd: Command, cmd: CliCommand): voi
       const kwargs = prepareCommandArgs(cmd, rawKwargs);
 
       const verbose = optionsRecord.verbose === true;
-      let format = typeof optionsRecord.format === 'string' ? optionsRecord.format : 'yaml';
-      const formatExplicit = subCmd.getOptionValueSource('format') === 'cli';
+      const format = typeof optionsRecord.format === 'string' ? optionsRecord.format : 'yaml';
       if (verbose) process.env.OPENCLI_VERBOSE = '1';
       if (cmd.deprecated) {
         const message = typeof cmd.deprecated === 'string' ? cmd.deprecated : `${fullName(cmd)} is deprecated.`;
@@ -90,23 +89,10 @@ export function registerCommandToProgram(siteCmd: Command, cmd: CliCommand): voi
       if (result === null || result === undefined) {
         return;
       }
-      const resolved = getRegistry().get(fullName(cmd)) ?? cmd;
-      if (!formatExplicit && resolved.defaultFormat) {
-        format = resolved.defaultFormat;
-      }
-
       if (verbose && (!result || (Array.isArray(result) && result.length === 0))) {
         log.warn('Command returned an empty result.');
       }
-      renderOutput(result, {
-        fmt: format,
-        fmtExplicit: formatExplicit,
-        columns: resolved.columns,
-        title: `${resolved.site}/${resolved.name}`,
-        elapsed: (Date.now() - startTime) / 1000,
-        source: fullName(resolved),
-        footerExtra: resolved.footerExtra?.(kwargs),
-      });
+      renderOutput(result, { fmt: format });
     } catch (err) {
       renderError(err, fullName(cmd), optionsRecord.verbose === true);
       process.exitCode = resolveExitCode(err);

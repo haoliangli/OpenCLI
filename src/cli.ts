@@ -12,8 +12,8 @@ import { fileURLToPath } from 'node:url';
 import { Command } from 'commander';
 import { styleText } from 'node:util';
 import { findPackageRoot, getBuiltEntryCandidates } from './package-paths.js';
-import { type CliCommand, fullName, getRegistry, strategyLabel } from './registry.js';
-import { serializeCommand, formatArgSummary } from './serialization.js';
+import { fullName, getRegistry } from './registry.js';
+import { serializeCommand } from './serialization.js';
 import { render as renderOutput } from './output.js';
 import { getBrowserFactory, browserSession } from './runtime.js';
 import { PKG_VERSION } from './version.js';
@@ -199,74 +199,13 @@ export function createProgram(BUILTIN_CLIS: string, USER_CLIS: string): Command 
   program
     .command('list')
     .description('List all available CLI commands')
-    .option('-f, --format <fmt>', 'Output format: yaml, json, table, md, csv', 'yaml')
+    .option('-f, --format <fmt>', 'Output format: yaml, json', 'yaml')
     .option('--json', 'JSON output (deprecated)')
     .action((opts) => {
       const registry = getRegistry();
       const commands = [...new Set(registry.values())].sort((a, b) => fullName(a).localeCompare(fullName(b)));
       const fmt = opts.json ? 'json' : opts.format;
-      const isStructured = fmt === 'json' || fmt === 'yaml';
-
-      if (fmt !== 'table') {
-        const rows = isStructured
-          ? commands.map(serializeCommand)
-          : commands.map(c => ({
-              command: fullName(c),
-              site: c.site,
-              name: c.name,
-              aliases: c.aliases?.join(', ') ?? '',
-              description: c.description,
-              strategy: strategyLabel(c),
-              browser: !!c.browser,
-              args: formatArgSummary(c.args),
-            }));
-        renderOutput(rows, {
-          fmt,
-          columns: ['command', 'site', 'name', 'aliases', 'description', 'strategy', 'browser', 'args',
-                     ...(isStructured ? ['columns', 'domain'] : [])],
-          title: 'opencli/list',
-          source: 'opencli list',
-        });
-        return;
-      }
-
-      // Table (default) — grouped by site
-      const sites = new Map<string, CliCommand[]>();
-      for (const cmd of commands) {
-        const g = sites.get(cmd.site) ?? [];
-        g.push(cmd);
-        sites.set(cmd.site, g);
-      }
-
-      console.log();
-      console.log(styleText('bold', '  opencli') + styleText('dim', ' — available commands'));
-      console.log();
-      for (const [site, cmds] of sites) {
-        console.log(styleText(['bold', 'cyan'], `  ${site}`));
-        for (const cmd of cmds) {
-          const label = strategyLabel(cmd);
-          const tag = label === 'public'
-            ? styleText('green', '[public]')
-            : styleText('yellow', `[${label}]`);
-          const aliases = cmd.aliases?.length ? styleText('dim', ` (aliases: ${cmd.aliases.join(', ')})`) : '';
-          console.log(`    ${cmd.name} ${tag}${aliases}${cmd.description ? styleText('dim', ` — ${cmd.description}`) : ''}`);
-        }
-        console.log();
-      }
-
-      const externalClis = loadExternalClis();
-      if (externalClis.length > 0) {
-        console.log(styleText(['bold', 'cyan'], '  external CLIs'));
-        for (const ext of externalClis) {
-          const isInstalled = isBinaryInstalled(ext.binary);
-          const tag = isInstalled ? styleText('green', '[installed]') : styleText('yellow', '[auto-install]');
-          console.log(`    ${ext.name} ${tag}${ext.description ? styleText('dim', ` — ${ext.description}`) : ''}`);
-        }
-        console.log();
-      }
-
-      console.log(styleText('dim', `  ${commands.length} built-in commands across ${sites.size} sites, ${externalClis.length} external CLIs`));
-      console.log();
+      renderOutput(commands.map(serializeCommand), { fmt });
     });
 
   // ── Built-in: validate / verify ───────────────────────────────────────────
@@ -1094,60 +1033,10 @@ cli({
   pluginCmd
     .command('list')
     .description('List installed plugins')
-    .option('-f, --format <fmt>', 'Output format: yaml, json, table', 'yaml')
+    .option('-f, --format <fmt>', 'Output format: yaml, json', 'yaml')
     .action(async (opts) => {
       const { listPlugins } = await import('./plugin.js');
-      const plugins = listPlugins();
-      if (plugins.length === 0) {
-        console.log(styleText('dim', '  No plugins installed.'));
-        console.log(styleText('dim', '  Install one with: opencli plugin install github:user/repo'));
-        return;
-      }
-      if (opts.format !== 'table') {
-        renderOutput(plugins, {
-          fmt: opts.format,
-          columns: ['name', 'commands', 'source'],
-          title: 'opencli/plugins',
-          source: 'opencli plugin list',
-        });
-        return;
-      }
-      console.log();
-      console.log(styleText('bold', '  Installed plugins'));
-      console.log();
-
-      // Group by monorepo
-      const standalone = plugins.filter((p) => !p.monorepoName);
-      const monoGroups = new Map<string, typeof plugins>();
-      for (const p of plugins) {
-        if (!p.monorepoName) continue;
-        const g = monoGroups.get(p.monorepoName) ?? [];
-        g.push(p);
-        monoGroups.set(p.monorepoName, g);
-      }
-
-      for (const p of standalone) {
-        const version = p.version ? styleText('green', ` @${p.version}`) : '';
-        const desc = p.description ? styleText('dim', ` — ${p.description}`) : '';
-        const cmds = p.commands.length > 0 ? styleText('dim', ` (${p.commands.join(', ')})`) : '';
-        const src = p.source ? styleText('dim', ` ← ${p.source}`) : '';
-        console.log(`  ${styleText('cyan', p.name)}${version}${desc}${cmds}${src}`);
-      }
-
-      for (const [mono, group] of monoGroups) {
-        console.log();
-        console.log(styleText(['bold', 'magenta'], `  📦 ${mono}`) + styleText('dim', ' (monorepo)'));
-        for (const p of group) {
-          const version = p.version ? styleText('green', ` @${p.version}`) : '';
-          const desc = p.description ? styleText('dim', ` — ${p.description}`) : '';
-          const cmds = p.commands.length > 0 ? styleText('dim', ` (${p.commands.join(', ')})`) : '';
-          console.log(`    ${styleText('cyan', p.name)}${version}${desc}${cmds}`);
-        }
-      }
-
-      console.log();
-      console.log(styleText('dim', `  ${plugins.length} plugin(s) installed`));
-      console.log();
+      renderOutput(listPlugins(), { fmt: opts.format });
     });
 
   pluginCmd

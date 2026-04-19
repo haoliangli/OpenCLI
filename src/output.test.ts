@@ -16,7 +16,7 @@ describe('output TTY detection', () => {
 
   it('defaults to YAML in non-TTY', () => {
     Object.defineProperty(process.stdout, 'isTTY', { value: false, writable: true });
-    render([{ name: 'alice', score: 10 }], { columns: ['name', 'score'] });
+    render([{ name: 'alice', score: 10 }]);
     const out = logSpy.mock.calls.map((c: unknown[]) => c[0]).join('\n');
     expect(out).toContain('name: alice');
     expect(out).toContain('score: 10');
@@ -24,7 +24,7 @@ describe('output TTY detection', () => {
 
   it('defaults to YAML in TTY too', () => {
     Object.defineProperty(process.stdout, 'isTTY', { value: true, writable: true });
-    render([{ name: 'alice', score: 10 }], { columns: ['name', 'score'] });
+    render([{ name: 'alice', score: 10 }]);
     const out = logSpy.mock.calls.map((c: unknown[]) => c[0]).join('\n');
     expect(out).toContain('name: alice');
     expect(out).toContain('score: 10');
@@ -37,11 +37,10 @@ describe('output TTY detection', () => {
     expect(JSON.parse(out)).toEqual([{ name: 'alice' }]);
   });
 
-  it('explicit -f table still renders a table in non-TTY', () => {
-    Object.defineProperty(process.stdout, 'isTTY', { value: false, writable: true });
-    render([{ name: 'alice' }], { fmt: 'table', fmtExplicit: true, columns: ['name'] });
+  it('falls back to YAML for unsupported legacy rich formats', () => {
+    Object.defineProperty(process.stdout, 'isTTY', { value: true, writable: true });
+    render([{ name: 'alice' }], { fmt: 'table' });
     const out = logSpy.mock.calls.map((c: unknown[]) => c[0]).join('\n');
-    expect(out).not.toContain('name: alice');
-    expect(out).toContain('alice');
+    expect(out).toContain('name: alice');
   });
 });
