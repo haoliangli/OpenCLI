@@ -307,7 +307,7 @@ opencli xiaoyuzhou transcript 69dd0c98e2c8be31551f6a33 --output ./xiaoyuzhou-tra
 
 ## Output Formats
 
-Registry-backed commands, `opencli list`, and `opencli plugin list` support `--format` / `-f` with `yaml` as the default path. Rich-text formats such as `table`, `md`, and `csv` remain explicit opt-ins.
+Registry-backed commands now default to `yaml` unless a command explicitly keeps another default format such as `plain` or `json`. `opencli list` and `opencli plugin list` also default to `yaml`, while rich-text formats such as `table`, `md`, and `csv` remain explicit opt-ins.
 
 ```bash
 opencli bilibili hot -f json    # Pipe to jq or LLMs
