@@ -136,7 +136,7 @@ describe('built-in browser commands verbose wiring', () => {
     );
   });
 
-  it('renders generate output as yaml by default', async () => {
+  it('renders generate output as summary by default', async () => {
     const program = createProgram('', '');
 
     mockGenerateVerifiedFromUrl.mockResolvedValueOnce({
@@ -147,8 +147,8 @@ describe('built-in browser commands verbose wiring', () => {
 
     await program.parseAsync(['node', 'opencli', 'generate', 'https://example.com']);
 
-    expect(consoleLogSpy).toHaveBeenCalledWith(expect.stringContaining('status: success'));
-    expect(mockRenderGenerateVerifiedSummary).not.toHaveBeenCalled();
+    expect(mockRenderGenerateVerifiedSummary).toHaveBeenCalled();
+    expect(consoleLogSpy).toHaveBeenCalledWith('generate-summary');
   });
 
   it('renders generate output as json when requested', async () => {
